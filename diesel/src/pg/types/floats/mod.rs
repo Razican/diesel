@@ -50,8 +50,7 @@ impl ::std::fmt::Display for InvalidNumericSign {
 impl Error for InvalidNumericSign {}
 
 impl FromSql<sql_types::Numeric, Pg> for PgNumeric {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let bytes = not_none!(bytes);
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
         let mut bytes = bytes.as_bytes();
         let digit_count = bytes.read_u16::<NetworkEndian>()?;
         let mut digits = Vec::with_capacity(digit_count as usize);

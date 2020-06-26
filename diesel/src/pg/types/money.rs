@@ -25,7 +25,7 @@ use crate::sql_types::{BigInt, Money};
 pub struct PgMoney(pub i64);
 
 impl FromSql<Money, Pg> for PgMoney {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
         FromSql::<BigInt, Pg>::from_sql(bytes).map(PgMoney)
     }
 }

@@ -3,7 +3,7 @@ use crate::expression::*;
 use crate::query_builder::*;
 use crate::query_source::joins::ToInnerJoin;
 use crate::result::QueryResult;
-use crate::sql_types::{DieselNumericOps, IntoNullable};
+use crate::sql_types::{DieselNumericOps, IntoNullable, Typed, TypedExpressionType};
 
 #[derive(Debug, Copy, Clone, DieselNumericOps, ValidGrouping)]
 pub struct Nullable<T>(T);
@@ -14,12 +14,12 @@ impl<T> Nullable<T> {
     }
 }
 
-impl<T> Expression for Nullable<T>
+impl<T, ST> Expression for Nullable<T>
 where
-    T: Expression,
-    <T as Expression>::SqlType: IntoNullable,
+    T: Expression<SqlType = ST>,
+    ST: IntoNullable + TypedExpressionType,
 {
-    type SqlType = <<T as Expression>::SqlType as IntoNullable>::Nullable;
+    type SqlType = Typed<<ST as IntoNullable>::Nullable>;
 }
 
 impl<T, DB> QueryFragment<DB> for Nullable<T>

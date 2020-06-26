@@ -3,7 +3,7 @@ use crate::expression::{AsExpression, Expression, ValidGrouping};
 use crate::pg::Pg;
 use crate::query_builder::*;
 use crate::result::QueryResult;
-use crate::sql_types::Array;
+use crate::sql_types::{Array, Typed};
 
 /// Creates a PostgreSQL `ANY` expression.
 ///
@@ -75,9 +75,9 @@ impl<Expr> Any<Expr> {
 
 impl<Expr, ST> Expression for Any<Expr>
 where
-    Expr: Expression<SqlType = Array<ST>>,
+    Expr: Expression<SqlType = Typed<Array<ST>>>,
 {
-    type SqlType = ST;
+    type SqlType = Typed<ST>;
 }
 
 impl<Expr> QueryFragment<Pg> for Any<Expr>
@@ -108,9 +108,9 @@ impl<Expr> All<Expr> {
 
 impl<Expr, ST> Expression for All<Expr>
 where
-    Expr: Expression<SqlType = Array<ST>>,
+    Expr: Expression<SqlType = Typed<Array<ST>>>,
 {
-    type SqlType = ST;
+    type SqlType = Typed<ST>;
 }
 
 impl<Expr> QueryFragment<Pg> for All<Expr>
@@ -128,7 +128,7 @@ where
 impl_selectable_expression!(All<Expr>);
 
 pub trait AsArrayExpression<ST> {
-    type Expression: Expression<SqlType = Array<ST>>;
+    type Expression: Expression<SqlType = Typed<Array<ST>>>;
 
     fn as_expression(self) -> Self::Expression;
 }
@@ -147,7 +147,7 @@ where
 impl<ST, S, F, W, O, L, Of, G, FU> AsArrayExpression<ST>
     for SelectStatement<S, F, W, O, L, Of, G, FU>
 where
-    Self: SelectQuery<SqlType = ST>,
+    Self: SelectQuery<SqlType = Typed<ST>>,
 {
     type Expression = Subselect<Self, Array<ST>>;
 
@@ -158,7 +158,7 @@ where
 
 impl<'a, ST, QS, DB> AsArrayExpression<ST> for BoxedSelectStatement<'a, ST, QS, DB>
 where
-    Self: SelectQuery<SqlType = ST>,
+    Self: SelectQuery<SqlType = Typed<ST>>,
 {
     type Expression = Subselect<Self, Array<ST>>;
 

@@ -1,10 +1,9 @@
 use super::RunQueryDsl;
 use crate::backend::Backend;
 use crate::connection::Connection;
-use crate::deserialize::Queryable;
+use crate::deserialize::{FromSqlRow, IsCompatibleType};
 use crate::query_builder::{AsQuery, QueryFragment, QueryId};
 use crate::result::QueryResult;
-use crate::sql_types::HasSqlType;
 
 /// The `load` method
 ///
@@ -18,13 +17,13 @@ pub trait LoadQuery<Conn, U>: RunQueryDsl<Conn> {
     fn internal_load(self, conn: &Conn) -> QueryResult<Vec<U>>;
 }
 
-impl<Conn, T, U> LoadQuery<Conn, U> for T
+impl<Conn, T, U, ST> LoadQuery<Conn, U> for T
 where
     Conn: Connection,
-    Conn::Backend: HasSqlType<T::SqlType>,
     T: AsQuery + RunQueryDsl<Conn>,
     T::Query: QueryFragment<Conn::Backend> + QueryId,
-    U: Queryable<T::SqlType, Conn::Backend>,
+    U: FromSqlRow<ST, Conn::Backend>,
+    T::SqlType: IsCompatibleType<Conn::Backend, Compatible = ST>,
 {
     fn internal_load(self, conn: &Conn) -> QueryResult<Vec<U>> {
         conn.query_by_index(self)

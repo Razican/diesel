@@ -82,6 +82,7 @@ pub use self::sql_literal::{SqlLiteral, UncheckedBind};
 
 use crate::backend::Backend;
 use crate::dsl::AsExprOf;
+use crate::sql_types::{SqlType, Typed, TypedExpressionType};
 
 /// Represents a typed fragment of SQL.
 ///
@@ -92,7 +93,7 @@ use crate::dsl::AsExprOf;
 /// implementing this directly.
 pub trait Expression {
     /// The type that this expression represents in SQL
-    type SqlType;
+    type SqlType: TypedExpressionType;
 }
 
 impl<T: Expression + ?Sized> Expression for Box<T> {
@@ -124,9 +125,12 @@ impl<'a, T: Expression + ?Sized> Expression for &'a T {
 ///
 ///  This trait could be [derived](derive.AsExpression.html)
 
-pub trait AsExpression<T> {
+pub trait AsExpression<T>
+where
+    T: SqlType,
+{
     /// The expression being returned
-    type Expression: Expression<SqlType = T>;
+    type Expression: Expression<SqlType = Typed<T>>;
 
     /// Perform the conversion
     fn as_expression(self) -> Self::Expression;
@@ -135,7 +139,7 @@ pub trait AsExpression<T> {
 #[doc(inline)]
 pub use diesel_derives::AsExpression;
 
-impl<T: Expression> AsExpression<T::SqlType> for T {
+impl<T: Expression<SqlType = Typed<ST>>, ST: SqlType> AsExpression<ST> for T {
     type Expression = Self;
 
     fn as_expression(self) -> Self {
@@ -177,6 +181,7 @@ pub trait IntoSql {
     fn into_sql<T>(self) -> AsExprOf<Self, T>
     where
         Self: AsExpression<T> + Sized,
+        T: SqlType,
     {
         self.as_expression()
     }
@@ -188,6 +193,7 @@ pub trait IntoSql {
     fn as_sql<'a, T>(&'a self) -> AsExprOf<&'a Self, T>
     where
         &'a Self: AsExpression<T>,
+        T: SqlType,
     {
         self.as_expression()
     }

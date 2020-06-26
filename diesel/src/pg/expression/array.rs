@@ -4,6 +4,7 @@ use crate::expression::{
 };
 use crate::query_builder::{AstPass, QueryFragment, QueryId};
 use crate::sql_types;
+use sql_types::Typed;
 use std::marker::PhantomData;
 
 /// An ARRAY[...] literal.
@@ -60,7 +61,7 @@ impl<T, ST> Expression for ArrayLiteral<T, ST>
 where
     T: Expression,
 {
-    type SqlType = sql_types::Array<ST>;
+    type SqlType = Typed<sql_types::Array<ST>>;
 }
 
 impl<T, ST, DB> QueryFragment<DB> for ArrayLiteral<T, ST>

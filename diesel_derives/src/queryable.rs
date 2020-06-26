@@ -30,24 +30,42 @@ pub fn derive(item: syn::DeriveInput) -> Result<proc_macro2::TokenStream, Diagno
         let where_clause = generics.where_clause.get_or_insert(parse_quote!(where));
         where_clause
             .predicates
-            .push(parse_quote!((#(#field_ty,)*): Queryable<__ST, __DB>));
+            .push(parse_quote!((#(#field_ty,)*): FromSqlRow<Typed<__ST>, __DB>));
     }
     let (impl_generics, _, where_clause) = generics.split_for_impl();
+    let field_count = field_ty.len();
 
     Ok(wrap_in_dummy_mod(quote! {
-        use diesel::deserialize::Queryable;
+        use diesel::deserialize::{FromSqlRow, Result, StaticallySizedRow};
+        use diesel::row::{Row, Field};
+        use diesel::sql_types::Typed;
 
-        impl #impl_generics Queryable<__ST, __DB> for #struct_name #ty_generics
-        #where_clause
+        impl #impl_generics FromSqlRow<Typed<__ST>, __DB> for #struct_name #ty_generics
+            #where_clause
         {
-            type Row = <(#(#field_ty,)*) as Queryable<__ST, __DB>>::Row;
-
-            fn build(row: Self::Row) -> Self {
-                let row: (#(#field_ty,)*) = Queryable::build(row);
-                Self {
+            fn build_from_row<'__a, __T: Row<'__a, __DB>>(row: &mut __T) -> Result<Self>
+            where
+                __T::Item: Field<'__a, __DB>,
+            {
+                let row =
+                    <(#(#field_ty,)*) as FromSqlRow<Typed<__ST>, __DB>>::build_from_row(row)?;
+                Result::Ok(Self {
                     #(#build_expr,)*
-                }
+                })
             }
+
+            fn is_null<'__a, __T: Row<'__a, __DB>>(row: &mut __T) -> bool
+            where
+                __T::Item: Field<'__a, __DB>,
+            {
+                <(#(#field_ty,)*) as FromSqlRow<Typed<__ST>, __DB>>::is_null(row)
+            }
+        }
+
+        impl #impl_generics StaticallySizedRow<Typed<__ST>, __DB> for #struct_name #ty_generics
+            #where_clause
+        {
+            const FIELD_COUNT:usize = #field_count;
         }
     }))
 }

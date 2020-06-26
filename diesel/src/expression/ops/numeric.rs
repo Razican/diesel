@@ -24,10 +24,13 @@ macro_rules! numeric_operation {
         impl<Lhs, Rhs> Expression for $name<Lhs, Rhs>
         where
             Lhs: Expression,
-            Lhs::SqlType: sql_types::ops::$name,
+            Lhs::SqlType: sql_types::TypedSql,
+            <Lhs::SqlType as sql_types::TypedSql>::Inner: sql_types::ops::$name,
             Rhs: Expression,
         {
-            type SqlType = <Lhs::SqlType as sql_types::ops::$name>::Output;
+            type SqlType = sql_types::Typed<
+                    <<Lhs::SqlType as sql_types::TypedSql>::Inner as sql_types::ops::$name>::Output
+            >;
         }
 
         impl<Lhs, Rhs, DB> QueryFragment<DB> for $name<Lhs, Rhs>

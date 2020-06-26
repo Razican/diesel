@@ -60,9 +60,8 @@ macro_rules! assert_or_error {
 macro_rules! impl_Sql {
     ($ty: ty, $net_type: expr) => {
         impl FromSql<$ty, Pg> for IpNetwork {
-            fn from_sql(value: Option<PgValue<'_>>) -> deserialize::Result<Self> {
+            fn from_sql(value: PgValue<'_>) -> deserialize::Result<Self> {
                 // https://github.com/postgres/postgres/blob/55c3391d1e6a201b5b891781d21fe682a8c64fe6/src/include/utils/inet.h#L23-L28
-                let value = not_none!(value);
                 let bytes = value.as_bytes();
                 assert_or_error!(4 <= bytes.len(), "input is too short.");
                 let af = bytes[0];

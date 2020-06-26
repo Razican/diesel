@@ -1,14 +1,14 @@
 use crate::expression::operators::And;
 use crate::expression::Expression;
 use crate::expression_methods::*;
-use crate::sql_types::Bool;
+use crate::sql_types::{Bool, Typed};
 
 /// This method is used by `FindDsl` to work with tuples. Because we cannot
 /// express this without specialization or overlapping impls, it is brute force
 /// implemented on columns in the `column!` macro.
 #[doc(hidden)]
 pub trait EqAll<Rhs> {
-    type Output: Expression<SqlType = Bool>;
+    type Output: Expression<SqlType = Typed<Bool>>;
 
     fn eq_all(self, rhs: Rhs) -> Self::Output;
 }

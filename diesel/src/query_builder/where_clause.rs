@@ -5,7 +5,7 @@ use crate::expression::operators::And;
 use crate::expression::*;
 use crate::expression_methods::*;
 use crate::result::QueryResult;
-use crate::sql_types::Bool;
+use crate::sql_types::{Bool, BoolOrNullableBool, Nullable, Typed};
 
 /// Add `Predicate` to the current `WHERE` clause, joining with `AND` if
 /// applicable.
@@ -39,7 +39,8 @@ impl<DB: Backend> QueryFragment<DB> for NoWhereClause {
 
 impl<Predicate> WhereAnd<Predicate> for NoWhereClause
 where
-    Predicate: Expression<SqlType = Bool>,
+    Predicate: Expression,
+    Predicate::SqlType: BoolOrNullableBool,
 {
     type Output = WhereClause<Predicate>;
 
@@ -50,7 +51,8 @@ where
 
 impl<Predicate> WhereOr<Predicate> for NoWhereClause
 where
-    Predicate: Expression<SqlType = Bool>,
+    Predicate: Expression,
+    Predicate::SqlType: BoolOrNullableBool,
 {
     type Output = WhereClause<Predicate>;
 
@@ -83,20 +85,22 @@ where
 
 impl<Expr, Predicate> WhereAnd<Predicate> for WhereClause<Expr>
 where
-    Expr: Expression<SqlType = Bool>,
-    Predicate: Expression<SqlType = Bool>,
+    Expr: Expression,
+    Expr::SqlType: BoolOrNullableBool,
+    Predicate: Expression,
+    Predicate::SqlType: BoolOrNullableBool,
 {
     type Output = WhereClause<And<Expr, Predicate>>;
 
     fn and(self, predicate: Predicate) -> Self::Output {
-        WhereClause(self.0.and(predicate))
+        WhereClause(And::new(self.0, predicate))
     }
 }
 
 impl<Expr, Predicate> WhereOr<Predicate> for WhereClause<Expr>
 where
-    Expr: Expression<SqlType = Bool>,
-    Predicate: Expression<SqlType = Bool>,
+    Expr: Expression<SqlType = Typed<Bool>>,
+    Predicate: Expression<SqlType = Typed<Bool>>,
 {
     type Output = WhereClause<Or<Expr, Predicate>>;
 

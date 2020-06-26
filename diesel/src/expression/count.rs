@@ -3,7 +3,7 @@ use super::{Expression, ValidGrouping};
 use crate::backend::Backend;
 use crate::query_builder::*;
 use crate::result::QueryResult;
-use crate::sql_types::{BigInt, DieselNumericOps};
+use crate::sql_types::{BigInt, DieselNumericOps, SqlType, Typed};
 
 sql_function! {
     /// Creates a SQL `COUNT` expression
@@ -25,7 +25,7 @@ sql_function! {
     /// # }
     /// ```
     #[aggregate]
-    fn count<T>(expr: T) -> BigInt;
+    fn count<T: SqlType>(expr: T) -> BigInt;
 }
 
 /// Creates a SQL `COUNT(*)` expression
@@ -60,7 +60,7 @@ pub fn count_star() -> CountStar {
 pub struct CountStar;
 
 impl Expression for CountStar {
-    type SqlType = BigInt;
+    type SqlType = Typed<BigInt>;
 }
 
 impl<DB: Backend> QueryFragment<DB> for CountStar {

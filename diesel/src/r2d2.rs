@@ -18,10 +18,9 @@ use std::marker::PhantomData;
 
 use crate::backend::UsesAnsiSavepointSyntax;
 use crate::connection::{AnsiTransactionManager, SimpleConnection};
-use crate::deserialize::{Queryable, QueryableByName};
+use crate::deserialize::{FromSqlRow, IsCompatibleType};
 use crate::prelude::*;
 use crate::query_builder::{AsQuery, QueryFragment, QueryId};
-use crate::sql_types::HasSqlType;
 
 /// An r2d2 connection manager for use with Diesel.
 ///
@@ -145,22 +144,14 @@ where
         (&**self).execute(query)
     }
 
-    fn query_by_index<T, U>(&self, source: T) -> QueryResult<Vec<U>>
+    fn query_by_index<T, U, ST>(&self, source: T) -> QueryResult<Vec<U>>
     where
         T: AsQuery,
         T::Query: QueryFragment<Self::Backend> + QueryId,
-        Self::Backend: HasSqlType<T::SqlType>,
-        U: Queryable<T::SqlType, Self::Backend>,
+        U: FromSqlRow<ST, Self::Backend>,
+        T::SqlType: IsCompatibleType<Self::Backend, Compatible = ST>,
     {
         (&**self).query_by_index(source)
-    }
-
-    fn query_by_name<T, U>(&self, source: &T) -> QueryResult<Vec<U>>
-    where
-        T: QueryFragment<Self::Backend> + QueryId,
-        U: QueryableByName<Self::Backend>,
-    {
-        (&**self).query_by_name(source)
     }
 
     fn execute_returning_count<T>(&self, source: &T) -> QueryResult<usize>

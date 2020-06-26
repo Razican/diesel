@@ -9,7 +9,7 @@ macro_rules! operator_allowed {
         impl<Rhs> ::std::ops::$op<Rhs> for $tpe
         where
             Rhs: $crate::expression::AsExpression<
-                <<$tpe as $crate::Expression>::SqlType as $crate::sql_types::ops::$op>::Rhs,
+                <<<$tpe as $crate::Expression>::SqlType as $crate::sql_types::TypedSql>::Inner as $crate::sql_types::ops::$op>::Rhs,
             >,
         {
             type Output = $crate::expression::ops::$op<Self, Rhs::Expression>;
@@ -39,7 +39,7 @@ macro_rules! numeric_expr {
 #[doc(hidden)]
 macro_rules! __diesel_generate_ops_impls_if_numeric {
     ($column_name:ident, Nullable<$($inner:tt)::*>) => { __diesel_generate_ops_impls_if_numeric!($column_name, $($inner)::*); };
-    
+
     ($column_name:ident, Unsigned<$($inner:tt)::*>) => { __diesel_generate_ops_impls_if_numeric!($column_name, $($inner)::*); };
 
     ($column_name:ident, SmallInt) => { numeric_expr!($column_name); };

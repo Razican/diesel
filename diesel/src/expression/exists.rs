@@ -3,7 +3,7 @@ use crate::expression::subselect::Subselect;
 use crate::expression::{AppearsOnTable, Expression, SelectableExpression, ValidGrouping};
 use crate::query_builder::*;
 use crate::result::QueryResult;
-use crate::sql_types::Bool;
+use crate::sql_types::{Bool, Typed};
 
 /// Creates a SQL `EXISTS` expression.
 ///
@@ -32,21 +32,21 @@ pub fn exists<T>(query: T) -> Exists<T> {
     Exists(Subselect::new(query))
 }
 
-#[derive(Debug, Clone, Copy, QueryId)]
-pub struct Exists<T>(pub Subselect<T, ()>);
+#[derive(Clone, Copy, QueryId)]
+pub struct Exists<T>(pub Subselect<T, Typed<Bool>>);
 
 impl<T> Expression for Exists<T>
 where
-    Subselect<T, ()>: Expression,
+    Subselect<T, Bool>: Expression,
 {
-    type SqlType = Bool;
+    type SqlType = Typed<Bool>;
 }
 
 impl<T, GB> ValidGrouping<GB> for Exists<T>
 where
-    Subselect<T, ()>: ValidGrouping<GB>,
+    Subselect<T, Bool>: ValidGrouping<GB>,
 {
-    type IsAggregate = <Subselect<T, ()> as ValidGrouping<GB>>::IsAggregate;
+    type IsAggregate = <Subselect<T, Bool> as ValidGrouping<GB>>::IsAggregate;
 }
 
 #[cfg(not(feature = "unstable"))]
@@ -80,13 +80,13 @@ where
 impl<T, QS> SelectableExpression<QS> for Exists<T>
 where
     Self: AppearsOnTable<QS>,
-    Subselect<T, ()>: SelectableExpression<QS>,
+    Subselect<T, Bool>: SelectableExpression<QS>,
 {
 }
 
 impl<T, QS> AppearsOnTable<QS> for Exists<T>
 where
     Self: Expression,
-    Subselect<T, ()>: AppearsOnTable<QS>,
+    Subselect<T, Bool>: AppearsOnTable<QS>,
 {
 }

@@ -2,16 +2,16 @@ use byteorder::*;
 use std::io::Write;
 use std::num::NonZeroU32;
 
-use crate::deserialize::{self, FromSql, FromSqlRow, Queryable};
+use crate::deserialize::{self, FromSql, FromSqlRow};
 use crate::expression::{
     AppearsOnTable, AsExpression, Expression, SelectableExpression, ValidGrouping,
 };
 use crate::pg::{Pg, PgValue};
 use crate::query_builder::{AstPass, QueryFragment, QueryId};
 use crate::result::QueryResult;
-use crate::row::Row;
+use crate::row::{Field, Row};
 use crate::serialize::{self, IsNull, Output, ToSql, WriteTuple};
-use crate::sql_types::{HasSqlType, Record};
+use crate::sql_types::{HasSqlType, Record, SqlType, Typed};
 
 macro_rules! tuple_impls {
     ($(
@@ -27,8 +27,7 @@ macro_rules! tuple_impls {
             // but the only other option would be to use `mem::uninitialized`
             // and `ptr::write`.
             #[allow(clippy::eval_order_dependence)]
-            fn from_sql(value: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-                let value = not_none!(value);
+            fn from_sql(value: PgValue<'_>) -> deserialize::Result<Self> {
                 let mut bytes = value.as_bytes();
                 let num_elements = bytes.read_i32::<NetworkEndian>()?;
 
@@ -49,14 +48,14 @@ macro_rules! tuple_impls {
                     let num_bytes = bytes.read_i32::<NetworkEndian>()?;
 
                     if num_bytes == -1 {
-                        $T::from_sql(None)?
+                        $T::from_nullable_sql(None)?
                     } else {
                         let (elem_bytes, new_bytes) = bytes.split_at(num_bytes as usize);
                         bytes = new_bytes;
-                        $T::from_sql(Some(PgValue::new(
+                        $T::from_sql(PgValue::new(
                             elem_bytes,
                             oid,
-                        )))?
+                        ))?
                     }
                 },)+);
 
@@ -69,30 +68,37 @@ macro_rules! tuple_impls {
             }
         }
 
-        impl<$($T,)+ $($ST,)+> FromSqlRow<Record<($($ST,)+)>, Pg> for ($($T,)+)
+        impl<$($T,)+ $($ST,)+> FromSqlRow<Typed<Record<($($ST,)+)>>, Pg> for ($($T,)+)
         where
             Self: FromSql<Record<($($ST,)+)>, Pg>,
         {
-            fn build_from_row<RowT: Row<Pg>>(row: &mut RowT) -> deserialize::Result<Self> {
-                Self::from_sql(row.take())
+
+
+            fn build_from_row<'a, RowT: Row<'a, Pg>>(row: &mut RowT) -> deserialize::Result<Self>
+            where
+                RowT::Item: Field<'a, Pg>,
+            {
+                FromSql::from_nullable_sql(
+                    row.next()
+                        .ok_or_else(|| String::from("Unexpected end of row"))?
+                        .value(),
+                )
             }
-        }
 
-        impl<$($T,)+ $($ST,)+> Queryable<Record<($($ST,)+)>, Pg> for ($($T,)+)
-        where
-            Self: FromSqlRow<Record<($($ST,)+)>, Pg>,
-        {
-            type Row = Self;
+            fn is_null<'a, RowT: Row<'a, Pg>>(row: &mut RowT) -> bool
+            where
+                RowT::Item: Field<'a, Pg>,
+            {
+                row.next().map(|v| v.is_null()).unwrap_or(false)
 
-            fn build(row: Self::Row) -> Self {
-                row
             }
         }
 
         impl<$($T,)+ $($ST,)+> AsExpression<Record<($($ST,)+)>> for ($($T,)+)
         where
+            $($ST: SqlType,)+
             $($T: AsExpression<$ST>,)+
-            PgTuple<($($T::Expression,)+)>: Expression<SqlType = Record<($($ST,)+)>>,
+            PgTuple<($($T::Expression,)+)>: Expression<SqlType = Typed<Record<($($ST,)+)>>>,
         {
             type Expression = PgTuple<($($T::Expression,)+)>;
 
@@ -153,7 +159,7 @@ impl<T> Expression for PgTuple<T>
 where
     T: Expression,
 {
-    type SqlType = Record<T::SqlType>;
+    type SqlType = Typed<Record<T::SqlType>>;
 }
 
 impl<T, QS> SelectableExpression<QS> for PgTuple<T>

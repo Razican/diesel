@@ -1,7 +1,9 @@
 use crate::expression::grouped::Grouped;
 use crate::expression::operators::{And, Or};
 use crate::expression::{AsExpression, Expression};
-use crate::sql_types::{Bool, Nullable};
+use crate::sql_types::{
+    Bool, BoolOrNullableBool, IntoNullable, MaybeNullableType, Nullable, SqlType, Typed, TypedSql,
+};
 
 /// Methods present on boolean expressions
 pub trait BoolExpressionMethods: Expression + Sized {
@@ -36,7 +38,14 @@ pub trait BoolExpressionMethods: Expression + Sized {
     /// assert_eq!(expected, data);
     /// #     Ok(())
     /// # }
-    fn and<T: AsExpression<Self::SqlType>>(self, other: T) -> And<Self, T::Expression> {
+    fn and<T, ST>(self, other: T) -> And<Self, T::Expression>
+    where
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        ST: SqlType,
+        T: AsExpression<ST>,
+        And<Self, T::Expression>: Expression,
+    {
         And::new(self, other.as_expression())
     }
 
@@ -77,7 +86,14 @@ pub trait BoolExpressionMethods: Expression + Sized {
     /// assert_eq!(expected, data);
     /// #     Ok(())
     /// # }
-    fn or<T: AsExpression<Self::SqlType>>(self, other: T) -> Grouped<Or<Self, T::Expression>> {
+    fn or<T, ST>(self, other: T) -> Grouped<Or<Self, T::Expression>>
+    where
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        ST: SqlType,
+        T: AsExpression<ST>,
+        Or<Self, T::Expression>: Expression,
+    {
         Grouped(Or::new(self, other.as_expression()))
     }
 }
@@ -88,12 +104,3 @@ where
     T::SqlType: BoolOrNullableBool,
 {
 }
-
-#[doc(hidden)]
-/// Marker trait used to implement `BoolExpressionMethods` on the appropriate
-/// types. Once coherence takes associated types into account, we can remove
-/// this trait.
-pub trait BoolOrNullableBool {}
-
-impl BoolOrNullableBool for Bool {}
-impl BoolOrNullableBool for Nullable<Bool> {}

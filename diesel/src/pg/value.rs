@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use std::ops::Range;
 
 /// Raw postgres value as received from the database
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[allow(missing_debug_implementations)]
 pub struct PgValue<'a> {
     raw_value: &'a [u8],

@@ -1,5 +1,8 @@
 use diesel::backend::Backend;
-use diesel::deserialize::{FromSqlRow, Queryable};
+use diesel::{
+    deserialize::{FromSqlRow, StaticallySizedRow},
+    sql_types::Typed,
+};
 use std::fmt;
 use std::str::FromStr;
 
@@ -53,16 +56,35 @@ impl TableName {
     }
 }
 
-impl<ST, DB> Queryable<ST, DB> for TableName
+impl<ST, DB> FromSqlRow<Typed<ST>, DB> for TableName
 where
     DB: Backend,
-    (String, String): FromSqlRow<ST, DB>,
+    (String, String): FromSqlRow<Typed<ST>, DB>,
 {
-    type Row = (String, String);
+    fn build_from_row<'a, T: diesel::row::Row<'a, DB>>(
+        row: &mut T,
+    ) -> diesel::deserialize::Result<Self>
+    where
+        T::Item: diesel::row::Field<'a, DB>,
+    {
+        let (name, schema) = <(String, String) as FromSqlRow<Typed<ST>, DB>>::build_from_row(row)?;
 
-    fn build((name, schema): Self::Row) -> Self {
-        TableName::new(name, schema)
+        Ok(TableName::new(name, schema))
     }
+    fn is_null<'a, T: diesel::row::Row<'a, DB>>(row: &mut T) -> bool
+    where
+        T::Item: diesel::row::Field<'a, DB>,
+    {
+        <(String, String) as FromSqlRow<Typed<ST>, DB>>::is_null(row)
+    }
+}
+
+impl<ST, DB> StaticallySizedRow<Typed<ST>, DB> for TableName
+where
+    DB: Backend,
+    Self: FromSqlRow<Typed<ST>, DB>,
+{
+    const FIELD_COUNT: usize = 2;
 }
 
 impl fmt::Display for TableName {

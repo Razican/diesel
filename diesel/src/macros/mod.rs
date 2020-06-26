@@ -26,7 +26,7 @@ macro_rules! __diesel_column {
         pub struct $column_name;
 
         impl $crate::expression::Expression for $column_name {
-            type SqlType = $($Type)*;
+            type SqlType = $crate::sql_types::Typed<$($Type)*>;
         }
 
         impl<DB> $crate::query_builder::QueryFragment<DB> for $column_name where
@@ -101,9 +101,9 @@ macro_rules! __diesel_column {
 
         impl<T> $crate::EqAll<T> for $column_name where
             T: $crate::expression::AsExpression<$($Type)*>,
-            $crate::dsl::Eq<$column_name, T>: $crate::Expression<SqlType=$crate::sql_types::Bool>,
+            $crate::dsl::Eq<$column_name, T::Expression>: $crate::Expression<SqlType=$crate::sql_types::Typed<$crate::sql_types::Bool>>,
         {
-            type Output = $crate::dsl::Eq<Self, T>;
+            type Output = $crate::dsl::Eq<Self, T::Expression>;
 
             fn eq_all(self, rhs: T) -> Self::Output {
                 $crate::expression::operators::Eq::new(self, rhs.as_expression())
@@ -668,7 +668,7 @@ macro_rules! __diesel_table_impl {
             }
 
             /// The SQL type of all of the columns on this table
-            pub type SqlType = ($($($column_ty)*,)+);
+            pub type SqlType = ($($crate::sql_types::Typed<$($column_ty)*>,)+);
 
             /// Helper type for representing a boxed query from this table
             pub type BoxedQuery<'a, DB, ST = SqlType> = BoxedSelectStatement<'a, ST, table, DB>;
@@ -676,7 +676,7 @@ macro_rules! __diesel_table_impl {
             $crate::__diesel_table_query_source_impl!(table, $schema, $sql_name);
 
             impl AsQuery for table {
-                type SqlType = SqlType;
+                type SqlType = $crate::sql_types::Typed<SqlType>;
                 type Query = SelectStatement<Self>;
 
                 fn as_query(self) -> Self::Query {
@@ -819,7 +819,7 @@ macro_rules! __diesel_table_impl {
                 }
 
                 impl Expression for star {
-                    type SqlType = ();
+                    type SqlType = $crate::sql_types::NotSelectable;
                 }
 
                 impl<DB: Backend> QueryFragment<DB> for star where
@@ -1055,19 +1055,6 @@ macro_rules! allow_tables_to_appear_in_same_query {
     ($last_table:ident,) => {};
 
     () => {};
-}
-
-/// Gets the value out of an option, or returns an error.
-///
-/// This is used by `FromSql` implementations.
-#[macro_export]
-macro_rules! not_none {
-    ($bytes:expr) => {
-        match $bytes {
-            Some(bytes) => bytes,
-            None => return Err(Box::new($crate::result::UnexpectedNullError)),
-        }
-    };
 }
 
 // The order of these modules is important (at least for those which have tests).

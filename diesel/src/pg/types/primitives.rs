@@ -6,8 +6,7 @@ use crate::serialize::{self, IsNull, Output, ToSql};
 use crate::sql_types;
 
 impl FromSql<sql_types::Bool, Pg> for bool {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let bytes = not_none!(bytes);
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
         Ok(bytes.as_bytes()[0] != 0)
     }
 }

@@ -5,7 +5,7 @@ use crate::expression::*;
 use crate::query_builder::*;
 use crate::query_dsl::RunQueryDsl;
 use crate::result::QueryResult;
-use crate::sql_types::DieselNumericOps;
+use crate::sql_types::{DieselNumericOps, SqlType, Typed, TypedSql};
 
 #[derive(Debug, Clone, DieselNumericOps)]
 #[must_use = "Queries are only executed when calling `load`, `get_result`, or similar."]
@@ -18,7 +18,10 @@ pub struct SqlLiteral<ST, T = ()> {
     _marker: PhantomData<ST>,
 }
 
-impl<ST, T> SqlLiteral<ST, T> {
+impl<ST, T> SqlLiteral<ST, T>
+where
+    ST: SqlType,
+{
     #[doc(hidden)]
     pub fn new(sql: String, inner: T) -> Self {
         SqlLiteral {
@@ -100,6 +103,7 @@ impl<ST, T> SqlLiteral<ST, T> {
     /// ```
     pub fn bind<BindST, U>(self, bind_value: U) -> UncheckedBind<Self, U::Expression>
     where
+        BindST: SqlType,
         U: AsExpression<BindST>,
     {
         UncheckedBind::new(self, bind_value.as_expression())
@@ -152,8 +156,11 @@ impl<ST, T> SqlLiteral<ST, T> {
     }
 }
 
-impl<ST, T> Expression for SqlLiteral<ST, T> {
-    type SqlType = ST;
+impl<ST, T> Expression for SqlLiteral<ST, T>
+where
+    ST: SqlType,
+{
+    type SqlType = Typed<ST>;
 }
 
 impl<ST, T, DB> QueryFragment<DB> for SqlLiteral<ST, T>
@@ -176,14 +183,14 @@ impl<ST, T> QueryId for SqlLiteral<ST, T> {
 }
 
 impl<ST, T> Query for SqlLiteral<ST, T> {
-    type SqlType = ST;
+    type SqlType = Typed<ST>;
 }
 
 impl<ST, T, Conn> RunQueryDsl<Conn> for SqlLiteral<ST, T> {}
 
-impl<QS, ST, T> SelectableExpression<QS> for SqlLiteral<ST, T> {}
+impl<QS, ST, T> SelectableExpression<QS> for SqlLiteral<ST, T> where Self: Expression {}
 
-impl<QS, ST, T> AppearsOnTable<QS> for SqlLiteral<ST, T> {}
+impl<QS, ST, T> AppearsOnTable<QS> for SqlLiteral<ST, T> where Self: Expression {}
 
 impl<ST, T, GB> ValidGrouping<GB> for SqlLiteral<ST, T> {
     type IsAggregate = is_aggregate::Never;
@@ -223,7 +230,10 @@ impl<ST, T, GB> ValidGrouping<GB> for SqlLiteral<ST, T> {
 /// #     Ok(())
 /// # }
 /// ```
-pub fn sql<ST>(sql: &str) -> SqlLiteral<ST> {
+pub fn sql<ST>(sql: &str) -> SqlLiteral<ST>
+where
+    ST: SqlType,
+{
     SqlLiteral::new(sql.into(), ())
 }
 
@@ -288,7 +298,11 @@ where
     /// assert_eq!(Ok(expected), query);
     /// # }
     /// ```
-    pub fn sql(self, sql: &str) -> SqlLiteral<Query::SqlType, Self> {
+    pub fn sql(self, sql: &str) -> SqlLiteral<<Query::SqlType as TypedSql>::Inner, Self>
+    where
+        Query::SqlType: TypedSql,
+        <Query::SqlType as TypedSql>::Inner: SqlType,
+    {
         SqlLiteral::new(sql.into(), self)
     }
 }

@@ -10,8 +10,7 @@ use crate::serialize::{self, IsNull, Output, ToSql};
 use crate::sql_types;
 
 impl FromSql<sql_types::Json, Pg> for serde_json::Value {
-    fn from_sql(value: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let value = not_none!(value);
+    fn from_sql(value: PgValue<'_>) -> deserialize::Result<Self> {
         serde_json::from_slice(value.as_bytes()).map_err(|_| "Invalid Json".into())
     }
 }
@@ -25,8 +24,7 @@ impl ToSql<sql_types::Json, Pg> for serde_json::Value {
 }
 
 impl FromSql<sql_types::Jsonb, Pg> for serde_json::Value {
-    fn from_sql(value: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let value = not_none!(value);
+    fn from_sql(value: PgValue<'_>) -> deserialize::Result<Self> {
         let bytes = value.as_bytes();
         if bytes[0] != 1 {
             return Err("Unsupported JSONB encoding version".into());

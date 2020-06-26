@@ -131,7 +131,7 @@ fn now_can_be_used_as_nullable() {
     let nullable_timestamp = sql::<Nullable<Timestamp>>("CURRENT_TIMESTAMP");
     let result = select(nullable_timestamp.eq(now)).get_result(&connection());
 
-    assert_eq!(Ok(true), result);
+    assert_eq!(Ok(Some(true)), result);
 }
 
 #[test]
@@ -215,10 +215,10 @@ fn interval_is_deserialized_properly() {
     let connection = connection();
 
     let data = select(sql::<(
-        sql_types::Interval,
-        sql_types::Interval,
-        sql_types::Interval,
-        sql_types::Interval,
+        sql_types::Typed<sql_types::Interval>,
+        sql_types::Typed<sql_types::Interval>,
+        sql_types::Typed<sql_types::Interval>,
+        sql_types::Typed<sql_types::Interval>,
     )>(
         "'1 minute'::interval, '1 day'::interval, '1 month'::interval,
                     '4 years 3 days 2 hours 1 minute'::interval",

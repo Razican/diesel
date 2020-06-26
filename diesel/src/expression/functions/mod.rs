@@ -19,7 +19,7 @@ macro_rules! no_arg_sql_function_body_except_to_sql {
         pub struct $type_name;
 
         impl $crate::expression::Expression for $type_name {
-            type SqlType = $return_type;
+            type SqlType = $crate::sql_types::Typed<$return_type>;
         }
 
         impl<QS> $crate::expression::SelectableExpression<QS> for $type_name {}

@@ -377,7 +377,14 @@ pub struct Json;
 ///
 /// - `Option<T>` for any `T` which implements `FromSql<ST>`
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Nullable<ST: NotNull>(ST);
+pub struct Nullable<ST: SqlType>(ST);
+
+impl<ST> SqlType for Nullable<ST>
+where
+    ST: SqlType,
+{
+    type IsNull = IsNullable;
+}
 
 #[cfg(feature = "postgres")]
 pub use crate::pg::types::sql_types::*;
@@ -427,15 +434,6 @@ pub trait TypeMetadata {
     type MetadataLookup;
 }
 
-/// A marker trait indicating that a SQL type is not null.
-///
-/// All SQL types must implement this trait.
-///
-/// # Deriving
-///
-/// This trait is automatically implemented by `#[derive(SqlType)]`
-pub trait NotNull {}
-
 /// Converts a type which may or may not be nullable into its nullable
 /// representation.
 pub trait IntoNullable {
@@ -445,12 +443,50 @@ pub trait IntoNullable {
     type Nullable;
 }
 
-impl<T: NotNull> IntoNullable for T {
+impl<T> IntoNullable for T
+where
+    T: SqlType<IsNull = NotNull> + SingleValue,
+{
     type Nullable = Nullable<T>;
 }
 
-impl<T: NotNull> IntoNullable for Nullable<T> {
-    type Nullable = Nullable<T>;
+impl<T> IntoNullable for Nullable<T>
+where
+    T: SqlType,
+{
+    type Nullable = Self;
+}
+
+impl<T> IntoNullable for Typed<T>
+where
+    T: IntoNullable,
+{
+    type Nullable = T::Nullable;
+}
+
+pub trait IntoNotNullable {
+    type NotNullable;
+}
+
+impl<T> IntoNotNullable for T
+where
+    T: SqlType<IsNull = NotNull>,
+{
+    type NotNullable = T;
+}
+
+impl<T> IntoNotNullable for Nullable<T>
+where
+    T: SqlType,
+{
+    type NotNullable = T;
+}
+
+impl<T> IntoNotNullable for Typed<T>
+where
+    T: IntoNotNullable,
+{
+    type NotNullable = T::NotNullable;
 }
 
 /// A marker trait indicating that a SQL type represents a single value, as
@@ -463,11 +499,99 @@ impl<T: NotNull> IntoNullable for Nullable<T> {
 /// # Deriving
 ///
 /// This trait is automatically implemented by `#[derive(SqlType)]`
-pub trait SingleValue {}
+pub trait SingleValue: SqlType {}
 
-impl<T: NotNull + SingleValue> SingleValue for Nullable<T> {}
+impl<T: SqlType + SingleValue> SingleValue for Nullable<T> {}
 
 #[doc(inline)]
 pub use diesel_derives::DieselNumericOps;
 #[doc(inline)]
 pub use diesel_derives::SqlType;
+
+pub trait SqlType {
+    type IsNull: MixedNullable<IsNullable> + MixedNullable<NotNull>;
+}
+
+pub trait TypedExpressionType {}
+
+#[derive(Clone, Copy)]
+pub struct Typed<ST>(std::marker::PhantomData<ST>);
+
+#[derive(Clone, Copy)]
+pub struct Untyped;
+
+#[derive(Debug, Clone, Copy)]
+pub struct NotSelectable;
+
+impl<ST> TypedExpressionType for Typed<ST> {}
+impl TypedExpressionType for Untyped {}
+impl TypedExpressionType for NotSelectable {}
+
+pub trait TypedSql {
+    type Inner;
+}
+
+impl<ST> TypedSql for Typed<ST> {
+    type Inner = ST;
+}
+
+pub struct NotNull;
+pub struct IsNullable;
+
+pub trait MixedNullable<Other> {
+    type Out: MixedNullable<IsNullable> + MixedNullable<NotNull>;
+}
+
+impl MixedNullable<NotNull> for NotNull {
+    type Out = NotNull;
+}
+
+impl MixedNullable<IsNullable> for NotNull {
+    type Out = IsNullable;
+}
+
+impl MixedNullable<NotNull> for IsNullable {
+    type Out = IsNullable;
+}
+
+impl MixedNullable<IsNullable> for IsNullable {
+    type Out = IsNullable;
+}
+
+pub trait NullableIfOneIsNullable<Other, Out> {
+    type Out: SqlType;
+}
+
+pub trait MaybeNullableType<O> {
+    type Out: SqlType;
+}
+
+impl<A, B, O> NullableIfOneIsNullable<B, O> for A
+where
+    A: SqlType,
+    B: SqlType,
+    O: SqlType<IsNull = NotNull>,
+    B::IsNull: MixedNullable<A::IsNull>,
+    <B::IsNull as MixedNullable<A::IsNull>>::Out: MaybeNullableType<O>,
+{
+    type Out = <<B::IsNull as MixedNullable<A::IsNull>>::Out as MaybeNullableType<O>>::Out;
+}
+
+impl<O> MaybeNullableType<O> for NotNull
+where
+    O: SqlType,
+{
+    type Out = O;
+}
+
+impl<O> MaybeNullableType<O> for IsNullable
+where
+    O: SqlType,
+{
+    type Out = Nullable<O>;
+}
+
+pub trait BoolOrNullableBool {}
+
+impl BoolOrNullableBool for Typed<Bool> {}
+impl BoolOrNullableBool for Typed<Nullable<Bool>> {}

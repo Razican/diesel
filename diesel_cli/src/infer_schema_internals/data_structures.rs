@@ -1,8 +1,8 @@
 #[cfg(feature = "uses_information_schema")]
 use diesel::backend::Backend;
-use diesel::deserialize::{FromSqlRow, Queryable};
+use diesel::deserialize::FromSqlRow;
 #[cfg(feature = "sqlite")]
-use diesel::sqlite::Sqlite;
+use diesel::{sql_types::Typed, sqlite::Sqlite};
 
 #[cfg(feature = "uses_information_schema")]
 use super::information_schema::UsesInformationSchema;
@@ -73,27 +73,52 @@ impl ColumnInformation {
 }
 
 #[cfg(feature = "uses_information_schema")]
-impl<ST, DB> Queryable<ST, DB> for ColumnInformation
+impl<ST, DB> FromSqlRow<Typed<ST>, DB> for ColumnInformation
 where
     DB: Backend + UsesInformationSchema,
-    (String, String, String): FromSqlRow<ST, DB>,
+    (String, String, String): FromSqlRow<Typed<ST>, DB>,
 {
-    type Row = (String, String, String);
+    fn build_from_row<'a, T: diesel::row::Row<'a, DB>>(
+        row: &mut T,
+    ) -> diesel::deserialize::Result<Self>
+    where
+        T::Item: diesel::row::Field<'a, DB>,
+    {
+        let row = <(String, String, String) as FromSqlRow<Typed<ST>, DB>>::build_from_row(row)?;
 
-    fn build(row: Self::Row) -> Self {
-        ColumnInformation::new(row.0, row.1, row.2 == "YES")
+        Ok(ColumnInformation::new(row.0, row.1, row.2 == "YES"))
+    }
+
+    fn is_null<'a, T: diesel::row::Row<'a, DB>>(row: &mut T) -> bool
+    where
+        T::Item: diesel::row::Field<'a, DB>,
+    {
+        <(String, String, String) as FromSqlRow<Typed<ST>, DB>>::is_null(row)
     }
 }
 
 #[cfg(feature = "sqlite")]
-impl<ST> Queryable<ST, Sqlite> for ColumnInformation
+impl<ST> FromSqlRow<Typed<ST>, Sqlite> for ColumnInformation
 where
-    (i32, String, String, bool, Option<String>, bool): FromSqlRow<ST, Sqlite>,
+    (i32, String, String, bool, Option<String>, bool): FromSqlRow<Typed<ST>, Sqlite>,
 {
-    type Row = (i32, String, String, bool, Option<String>, bool);
-
-    fn build(row: Self::Row) -> Self {
-        ColumnInformation::new(row.1, row.2, !row.3)
+    fn build_from_row<'a, T: diesel::row::Row<'a, Sqlite>>(
+        row: &mut T,
+    ) -> diesel::deserialize::Result<Self>
+    where
+        T::Item: diesel::row::Field<'a, Sqlite>,
+    {
+        let row = <(i32, String, String, bool, Option<String>, bool) as FromSqlRow<
+            Typed<ST>,
+            Sqlite,
+        >>::build_from_row(row)?;
+        Ok(ColumnInformation::new(row.1, row.2, !row.3))
+    }
+    fn is_null<'a, T: diesel::row::Row<'a, Sqlite>>(row: &mut T) -> bool
+    where
+        T::Item: diesel::row::Field<'a, Sqlite>,
+    {
+        <(i32, String, String, bool, Option<String>, bool) as FromSqlRow<Typed<ST>, Sqlite>>::is_null(row)
     }
 }
 

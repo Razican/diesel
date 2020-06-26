@@ -19,8 +19,7 @@ mod foreign_derives {
 }
 
 impl FromSql<MacAddr, Pg> for [u8; 6] {
-    fn from_sql(value: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let value = not_none!(value);
+    fn from_sql(value: PgValue<'_>) -> deserialize::Result<Self> {
         value
             .as_bytes()
             .try_into()

@@ -1,8 +1,6 @@
-use std::error::Error;
-
 use crate::associations::BelongsTo;
 use crate::backend::Backend;
-use crate::deserialize::{self, FromSqlRow, Queryable, QueryableByName, StaticallySizedRow};
+use crate::deserialize::{FromSqlRow, StaticallySizedRow};
 use crate::expression::{
     AppearsOnTable, AsExpression, AsExpressionList, Expression, SelectableExpression, ValidGrouping,
 };
@@ -11,7 +9,7 @@ use crate::query_builder::*;
 use crate::query_source::*;
 use crate::result::QueryResult;
 use crate::row::*;
-use crate::sql_types::{HasSqlType, NotNull};
+use crate::sql_types::{HasSqlType, IntoNullable, MixedNullable, Nullable, SqlType, Typed};
 use crate::util::TupleAppend;
 
 macro_rules! tuple_impls {
@@ -21,7 +19,7 @@ macro_rules! tuple_impls {
         }
     )+) => {
         $(
-            impl<$($T),+, __DB> HasSqlType<($($T,)+)> for __DB where
+            impl<$($T),+, __DB> HasSqlType<($(Typed<$T>,)+)> for __DB where
                 $(__DB: HasSqlType<$T>),+,
                 __DB: Backend,
             {
@@ -35,66 +33,24 @@ macro_rules! tuple_impls {
                 }
             }
 
-            impl<$($T),+> NotNull for ($($T,)+) {
-            }
+            impl_from_sql_row!($Tuple, ($($T,)+), ($($ST,)+));
 
-            impl<$($T),+, $($ST),+, __DB> FromSqlRow<($($ST,)+), __DB> for ($($T,)+) where
+            impl<$($T),+, $($ST),+, __DB > StaticallySizedRow<Typed<($($ST,)*)>, __DB> for ($($T,)+) where
                 __DB: Backend,
-                $($T: FromSqlRow<$ST, __DB>),+,
-            {
-
-                #[allow(non_snake_case)]
-                fn build_from_row<RowT: Row<__DB>>(row: &mut RowT) -> Result<Self, Box<dyn Error + Send + Sync>> {
-                    // First call `build_from_row` for all tuple elements
-                    // to advance the row iterator correctly
-                    $(
-                        let $ST = $T::build_from_row(row);
-                    )+
-
-                    // Afterwards bubble up any possible errors
-                    Ok(($($ST?,)+))
-
-                    // As a note for anyone trying to optimize this:
-                    // We cannot just call something like `row.take()` for the
-                    // remaining tuple elements as we cannot know how much childs
-                    // they have on their own. For example one of them could be
-                    // `Option<(A, B)>`. Just calling `row.take()` as many times
-                    // as tuple elements are left would cause calling `row.take()`
-                    // at least one time less then required (as the child has two)
-                    // elements, not one.
-                }
-            }
-
-            impl<$($T),+, $($ST),+, __DB > StaticallySizedRow<($($ST,)+), __DB> for ($($T,)+) where
-                __DB: Backend,
+                Self: FromSqlRow<Typed<($($ST,)+)>, __DB>,
                 $($T: StaticallySizedRow<$ST, __DB>,)+
             {
                 const FIELD_COUNT: usize = $($T::FIELD_COUNT +)+ 0;
             }
 
-            impl<$($T),+, $($ST),+, __DB> Queryable<($($ST,)+), __DB> for ($($T,)+) where
-                __DB: Backend,
-                $($T: Queryable<$ST, __DB>),+,
-            {
-                type Row = ($($T::Row,)+);
-
-                fn build(row: Self::Row) -> Self {
-                    ($($T::build(row.$idx),)+)
-                }
-            }
-
-            impl<$($T,)+ __DB> QueryableByName<__DB> for ($($T,)+)
-            where
-                __DB: Backend,
-                $($T: QueryableByName<__DB>,)+
-            {
-                fn build<RowT: NamedRow<__DB>>(row: &RowT) -> deserialize::Result<Self> {
-                    Ok(($($T::build(row)?,)+))
-                }
-            }
-
             impl<$($T: Expression),+> Expression for ($($T,)+) {
-                type SqlType = ($(<$T as Expression>::SqlType,)+);
+                type SqlType = Typed<($(<$T as Expression>::SqlType,)+)>;
+            }
+
+            impl<$($T: SqlType,)*> IntoNullable for ($(Typed<$T>,)*)
+                where Self: SqlType,
+            {
+                type Nullable = Nullable<($(Typed<$T>,)*)>;
             }
 
             impl<$($T: QueryFragment<__DB>),+, __DB: Backend> QueryFragment<__DB> for ($($T,)+) {
@@ -256,6 +212,7 @@ macro_rules! tuple_impls {
 
             impl<$($T,)+ ST> AsExpressionList<ST> for ($($T,)+) where
                 $($T: AsExpression<ST>,)+
+                ST: SqlType,
             {
                 type Expression = ($($T::Expression,)+);
 
@@ -263,7 +220,67 @@ macro_rules! tuple_impls {
                     ($(self.$idx.as_expression(),)+)
                 }
             }
+
+            impl_sql_type!($($T,)*);
         )+
+    }
+}
+
+macro_rules! impl_from_sql_row {
+    ($Tuple: expr, ($T1: ident, $($T: ident,)*), ($ST1: ident, $($ST: ident,)*)) => {
+        impl<$T1, $ST1, $($T,)* $($ST,)* __DB> FromSqlRow<Typed<($($ST,)* $ST1,)>, __DB> for ($($T,)* $T1,) where
+            __DB: Backend,
+            $T1: FromSqlRow<$ST1, __DB>,
+            $(
+                $T: FromSqlRow<$ST, __DB> + StaticallySizedRow<$ST, __DB>,
+            )*
+
+        {
+
+            #[allow(non_snake_case, unused_variables, unused_mut)]
+            fn build_from_row<'a, RowT: Row<'a, __DB>>(row: &mut RowT)
+                -> crate::deserialize::Result<Self>
+            where
+                RowT::Item: Field<'a, __DB>,
+            {
+                Ok(($(
+                    $T::build_from_row(row)?,
+                )* $T1::build_from_row(row)?,))
+            }
+
+            #[allow(non_snake_case)]
+            fn is_null<'a, RowT: Row<'a, __DB>>(row: &mut RowT) -> bool
+            where
+                RowT::Item: Field<'a, __DB>,
+            {
+                $(
+                    let $ST = $T::is_null(row);
+                )*
+
+                let $ST1 = $T1::is_null(row);
+
+                $($ST ||)* $ST1
+            }
+        }
+    }
+}
+
+macro_rules! impl_sql_type {
+    ($T1: ident, $($T: ident,)+) => {
+        impl<$T1, $($T,)+> SqlType for (Typed<$T1>, $(Typed<$T>,)*)
+        where $T1: SqlType,
+              ($(Typed<$T>,)*): SqlType,
+              $T1::IsNull: MixedNullable<<($(Typed<$T>,)*) as SqlType>::IsNull>,
+        {
+            type IsNull = <$T1::IsNull as MixedNullable<<($(Typed<$T>,)*) as SqlType>::IsNull>>::Out;
+        }
+    };
+    ($T1: ident,) => {
+        impl<$T1> SqlType for (Typed<$T1>,)
+        where $T1: SqlType,
+        {
+            type IsNull = $T1::IsNull;
+        }
     }
 }
 

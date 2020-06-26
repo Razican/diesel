@@ -1,7 +1,7 @@
 use crate::expression::array_comparison::{AsInExpression, In, NotIn};
 use crate::expression::operators::*;
 use crate::expression::{nullable, AsExpression, Expression};
-use crate::sql_types::SingleValue;
+use crate::sql_types::{SingleValue, SqlType, TypedSql};
 
 /// Methods present on all expressions, except tuples
 pub trait ExpressionMethods: Expression + Sized {
@@ -19,7 +19,12 @@ pub trait ExpressionMethods: Expression + Sized {
     /// assert_eq!(Ok(1), data.first(&connection));
     /// # }
     /// ```
-    fn eq<T: AsExpression<Self::SqlType>>(self, other: T) -> Eq<Self, T::Expression> {
+    fn eq<T>(self, other: T) -> Eq<Self, T::Expression>
+    where
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
+    {
         Eq::new(self, other.as_expression())
     }
 
@@ -37,7 +42,12 @@ pub trait ExpressionMethods: Expression + Sized {
     /// assert_eq!(Ok(2), data.first(&connection));
     /// # }
     /// ```
-    fn ne<T: AsExpression<Self::SqlType>>(self, other: T) -> NotEq<Self, T::Expression> {
+    fn ne<T>(self, other: T) -> NotEq<Self, T::Expression>
+    where
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
+    {
         NotEq::new(self, other.as_expression())
     }
 
@@ -68,7 +78,9 @@ pub trait ExpressionMethods: Expression + Sized {
     /// ```
     fn eq_any<T>(self, values: T) -> In<Self, T::InExpression>
     where
-        T: AsInExpression<Self::SqlType>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsInExpression<<Self::SqlType as TypedSql>::Inner>,
     {
         In::new(self, values.as_in_expression())
     }
@@ -103,7 +115,9 @@ pub trait ExpressionMethods: Expression + Sized {
     /// ```
     fn ne_all<T>(self, values: T) -> NotIn<Self, T::InExpression>
     where
-        T: AsInExpression<Self::SqlType>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsInExpression<<Self::SqlType as TypedSql>::Inner>,
     {
         NotIn::new(self, values.as_in_expression())
     }
@@ -182,7 +196,12 @@ pub trait ExpressionMethods: Expression + Sized {
     /// #     Ok(())
     /// # }
     /// ```
-    fn gt<T: AsExpression<Self::SqlType>>(self, other: T) -> Gt<Self, T::Expression> {
+    fn gt<T>(self, other: T) -> Gt<Self, T::Expression>
+    where
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
+    {
         Gt::new(self, other.as_expression())
     }
 
@@ -208,7 +227,12 @@ pub trait ExpressionMethods: Expression + Sized {
     /// #     Ok(())
     /// # }
     /// ```
-    fn ge<T: AsExpression<Self::SqlType>>(self, other: T) -> GtEq<Self, T::Expression> {
+    fn ge<T>(self, other: T) -> GtEq<Self, T::Expression>
+    where
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
+    {
         GtEq::new(self, other.as_expression())
     }
 
@@ -234,7 +258,12 @@ pub trait ExpressionMethods: Expression + Sized {
     /// #     Ok(())
     /// # }
     /// ```
-    fn lt<T: AsExpression<Self::SqlType>>(self, other: T) -> Lt<Self, T::Expression> {
+    fn lt<T>(self, other: T) -> Lt<Self, T::Expression>
+    where
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
+    {
         Lt::new(self, other.as_expression())
     }
 
@@ -259,7 +288,12 @@ pub trait ExpressionMethods: Expression + Sized {
     /// assert_eq!("Sean", data);
     /// #     Ok(())
     /// # }
-    fn le<T: AsExpression<Self::SqlType>>(self, other: T) -> LtEq<Self, T::Expression> {
+    fn le<T>(self, other: T) -> LtEq<Self, T::Expression>
+    where
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
+    {
         LtEq::new(self, other.as_expression())
     }
 
@@ -285,8 +319,10 @@ pub trait ExpressionMethods: Expression + Sized {
     /// ```
     fn between<T, U>(self, lower: T, upper: U) -> Between<Self, And<T::Expression, U::Expression>>
     where
-        T: AsExpression<Self::SqlType>,
-        U: AsExpression<Self::SqlType>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
+        U: AsExpression<<Self::SqlType as TypedSql>::Inner>,
     {
         Between::new(self, And::new(lower.as_expression(), upper.as_expression()))
     }
@@ -320,8 +356,10 @@ pub trait ExpressionMethods: Expression + Sized {
         upper: U,
     ) -> NotBetween<Self, And<T::Expression, U::Expression>>
     where
-        T: AsExpression<Self::SqlType>,
-        U: AsExpression<Self::SqlType>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
+        U: AsExpression<<Self::SqlType as TypedSql>::Inner>,
     {
         NotBetween::new(self, And::new(lower.as_expression(), upper.as_expression()))
     }
@@ -385,7 +423,8 @@ pub trait ExpressionMethods: Expression + Sized {
 impl<T> ExpressionMethods for T
 where
     T: Expression,
-    T::SqlType: SingleValue,
+    T::SqlType: TypedSql,
+    <T::SqlType as TypedSql>::Inner: SingleValue,
 {
 }
 

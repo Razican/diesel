@@ -14,8 +14,7 @@ use crate::sql_types::Uuid;
 struct UuidProxy(uuid::Uuid);
 
 impl FromSql<Uuid, Pg> for uuid::Uuid {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let value = not_none!(bytes);
+    fn from_sql(value: PgValue<'_>) -> deserialize::Result<Self> {
         uuid::Uuid::from_slice(value.as_bytes()).map_err(Into::into)
     }
 }

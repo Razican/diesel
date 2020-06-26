@@ -166,13 +166,17 @@ fn associations_can_be_grouped_multiple_levels_deep() {
     ];
 
     let comments = comments.grouped_by(&posts);
-    let posts_and_comments = posts.into_iter().zip(comments).grouped_by(&users);
+    let posts_and_comments = check(posts.into_iter().zip(comments)).grouped_by(&users);
     let data = users
         .into_iter()
         .zip(posts_and_comments)
         .collect::<Vec<_>>();
 
     assert_eq!(expected_data, data);
+}
+
+fn check<'a, T: GroupedBy<'a, P>, P>(t: T) -> T {
+    t
 }
 
 #[test]

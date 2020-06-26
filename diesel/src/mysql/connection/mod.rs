@@ -8,11 +8,10 @@ use self::stmt::Statement;
 use self::url::ConnectionOptions;
 use super::backend::Mysql;
 use crate::connection::*;
-use crate::deserialize::{Queryable, QueryableByName};
+use crate::deserialize::{FromSqlRow, IsCompatibleType};
 use crate::query_builder::bind_collector::RawBytesBindCollector;
 use crate::query_builder::*;
 use crate::result::*;
-use crate::sql_types::HasSqlType;
 
 #[allow(missing_debug_implementations, missing_copy_implementations)]
 /// A connection to a MySQL database. Connection URLs should be in the form
@@ -60,38 +59,19 @@ impl Connection for MysqlConnection {
     }
 
     #[doc(hidden)]
-    fn query_by_index<T, U>(&self, source: T) -> QueryResult<Vec<U>>
+    fn query_by_index<T, U, ST>(&self, source: T) -> QueryResult<Vec<U>>
     where
         T: AsQuery,
         T::Query: QueryFragment<Self::Backend> + QueryId,
-        Self::Backend: HasSqlType<T::SqlType>,
-        U: Queryable<T::SqlType, Self::Backend>,
+        U: FromSqlRow<ST, Self::Backend>,
+        T::SqlType: IsCompatibleType<Self::Backend, Compatible = ST>,
     {
-        use crate::deserialize::FromSqlRow;
         use crate::result::Error::DeserializationError;
 
         let mut stmt = self.prepare_query(&source.as_query())?;
-        let mut metadata = Vec::new();
-        Mysql::mysql_row_metadata(&mut metadata, &());
+        let metadata = T::SqlType::mysql_row_metadata(&());
         let results = unsafe { stmt.results(metadata)? };
-        results.map(|mut row| {
-            U::Row::build_from_row(&mut row)
-                .map(U::build)
-                .map_err(DeserializationError)
-        })
-    }
-
-    #[doc(hidden)]
-    fn query_by_name<T, U>(&self, source: &T) -> QueryResult<Vec<U>>
-    where
-        T: QueryFragment<Self::Backend> + QueryId,
-        U: QueryableByName<Self::Backend>,
-    {
-        use crate::result::Error::DeserializationError;
-
-        let mut stmt = self.prepare_query(source)?;
-        let results = unsafe { stmt.named_results()? };
-        results.map(|row| U::build(&row).map_err(DeserializationError))
+        results.map(|mut row| U::build_from_row(&mut row).map_err(DeserializationError))
     }
 
     #[doc(hidden)]

@@ -38,10 +38,6 @@ impl StatementMetadata {
         }
     }
 
-    pub fn column_indices<'a>(&'a self) -> &'a HashMap<&'a str, usize> {
-        &self.column_indices
-    }
-
     fn populate_column_indices(&mut self) {
         self.column_indices = self
             .fields()

@@ -24,7 +24,7 @@ fn overflow_returns_an_error_but_does_not_panic() {
     let connection = connection_with_sean_and_tess_in_users_table();
     let query_result = users.select(id + i32::max_value()).load::<i32>(&connection);
     assert!(
-        query_result.is_err(),
+        dbg!(query_result).is_err(),
         "Integer overflow should have returned an error"
     );
 }

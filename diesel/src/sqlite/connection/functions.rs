@@ -3,11 +3,12 @@ extern crate libsqlite3_sys as ffi;
 use super::raw::RawConnection;
 use super::serialized_value::SerializedValue;
 use super::{Sqlite, SqliteAggregateFunction, SqliteValue};
-use crate::deserialize::{FromSqlRow, Queryable, StaticallySizedRow};
+use crate::deserialize::{FromSqlRow, StaticallySizedRow};
 use crate::result::{DatabaseErrorKind, Error, QueryResult};
-use crate::row::Row;
+use crate::row::Field;
 use crate::serialize::{IsNull, Output, ToSql};
-use crate::sql_types::HasSqlType;
+use crate::sql_types::{HasSqlType, Typed};
+use std::marker::PhantomData;
 
 pub fn register<ArgsSqlType, RetSqlType, Args, Ret, F>(
     conn: &RawConnection,
@@ -17,12 +18,11 @@ pub fn register<ArgsSqlType, RetSqlType, Args, Ret, F>(
 ) -> QueryResult<()>
 where
     F: FnMut(&RawConnection, Args) -> Ret + Send + 'static,
-    Args: Queryable<ArgsSqlType, Sqlite>,
-    Args::Row: StaticallySizedRow<ArgsSqlType, Sqlite>,
+    Args: FromSqlRow<Typed<ArgsSqlType>, Sqlite> + StaticallySizedRow<Typed<ArgsSqlType>, Sqlite>,
     Ret: ToSql<RetSqlType, Sqlite>,
     Sqlite: HasSqlType<RetSqlType>,
 {
-    let fields_needed = Args::Row::FIELD_COUNT;
+    let fields_needed = Args::FIELD_COUNT;
     if fields_needed > 127 {
         return Err(Error::DatabaseError(
             DatabaseErrorKind::UnableToSendCommand,
@@ -46,12 +46,11 @@ pub fn register_aggregate<ArgsSqlType, RetSqlType, Args, Ret, A>(
 ) -> QueryResult<()>
 where
     A: SqliteAggregateFunction<Args, Output = Ret> + 'static + Send,
-    Args: Queryable<ArgsSqlType, Sqlite>,
-    Args::Row: StaticallySizedRow<ArgsSqlType, Sqlite>,
+    Args: FromSqlRow<Typed<ArgsSqlType>, Sqlite> + StaticallySizedRow<Typed<ArgsSqlType>, Sqlite>,
     Ret: ToSql<RetSqlType, Sqlite>,
     Sqlite: HasSqlType<RetSqlType>,
 {
-    let fields_needed = Args::Row::FIELD_COUNT;
+    let fields_needed = Args::FIELD_COUNT;
     if fields_needed > 127 {
         return Err(Error::DatabaseError(
             DatabaseErrorKind::UnableToSendCommand,
@@ -71,12 +70,10 @@ pub(crate) fn build_sql_function_args<ArgsSqlType, Args>(
     args: &[*mut ffi::sqlite3_value],
 ) -> Result<Args, Error>
 where
-    Args: Queryable<ArgsSqlType, Sqlite>,
+    Args: FromSqlRow<Typed<ArgsSqlType>, Sqlite>,
 {
     let mut row = FunctionRow::new(args);
-    let args_row = Args::Row::build_from_row(&mut row).map_err(Error::DeserializationError)?;
-
-    Ok(Args::build(args_row))
+    Args::build_from_row(&mut row).map_err(Error::DeserializationError)
 }
 
 pub(crate) fn process_sql_function_result<RetSqlType, Ret>(
@@ -101,6 +98,7 @@ where
     })
 }
 
+#[derive(Clone)]
 struct FunctionRow<'a> {
     column_count: usize,
     args: &'a [*mut ffi::sqlite3_value],
@@ -115,25 +113,41 @@ impl<'a> FunctionRow<'a> {
     }
 }
 
-impl<'a> Row<Sqlite> for FunctionRow<'a> {
-    fn take(&mut self) -> Option<SqliteValue<'_>> {
-        self.args.split_first().and_then(|(&first, rest)| {
+impl<'a> ExactSizeIterator for FunctionRow<'a> {}
+
+impl<'a> Iterator for FunctionRow<'a> {
+    type Item = FunctionArgument<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.args.split_first().map(|(&first, rest)| {
             self.args = rest;
-            unsafe { SqliteValue::new(first) }
+            FunctionArgument {
+                arg: first,
+                p: PhantomData,
+            }
         })
     }
 
-    fn next_is_null(&self, count: usize) -> bool {
-        self.args[..count]
-            .iter()
-            .all(|&p| unsafe { SqliteValue::new(p) }.is_none())
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.column_count, Some(self.column_count))
     }
+}
 
-    fn column_count(&self) -> usize {
-        self.column_count
-    }
+struct FunctionArgument<'a> {
+    arg: *mut ffi::sqlite3_value,
+    p: PhantomData<&'a ()>,
+}
 
+impl<'a> Field<'a, Sqlite> for FunctionArgument<'a> {
     fn column_name(&self) -> Option<&str> {
         None
+    }
+
+    fn is_null(&self) -> bool {
+        dbg!(self.value().is_none())
+    }
+
+    fn value(&self) -> Option<crate::backend::RawValue<'a, Sqlite>> {
+        unsafe { SqliteValue::new(self.arg) }
     }
 }

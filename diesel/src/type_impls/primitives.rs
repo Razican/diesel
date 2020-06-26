@@ -2,11 +2,9 @@ use std::error::Error;
 use std::io::Write;
 
 use crate::backend::{self, Backend, BinaryRawValue};
-use crate::deserialize::{self, FromSql, FromSqlRow, Queryable};
+use crate::deserialize::{self, FromSql, FromSqlRow, StaticallySizedRow};
 use crate::serialize::{self, IsNull, Output, ToSql};
-use crate::sql_types::{
-    self, BigInt, Binary, Bool, Double, Float, Integer, NotNull, SmallInt, Text,
-};
+use crate::sql_types::{self, BigInt, Binary, Bool, Double, Float, Integer, SmallInt, Text};
 
 #[allow(dead_code)]
 mod foreign_impls {
@@ -102,14 +100,12 @@ mod foreign_impls {
     struct BinarySliceProxy([u8]);
 }
 
-impl NotNull for () {}
-
 impl<ST, DB> FromSql<ST, DB> for String
 where
     DB: Backend,
     *const str: FromSql<ST, DB>,
 {
-    fn from_sql(bytes: Option<backend::RawValue<DB>>) -> deserialize::Result<Self> {
+    fn from_sql(bytes: backend::RawValue<DB>) -> deserialize::Result<Self> {
         let str_ptr = <*const str as FromSql<ST, DB>>::from_sql(bytes)?;
         // We know that the pointer impl will never return null
         let string = unsafe { &*str_ptr };
@@ -127,9 +123,8 @@ impl<DB> FromSql<sql_types::Text, DB> for *const str
 where
     DB: Backend + for<'a> BinaryRawValue<'a>,
 {
-    fn from_sql(value: Option<crate::backend::RawValue<DB>>) -> deserialize::Result<Self> {
+    fn from_sql(value: crate::backend::RawValue<DB>) -> deserialize::Result<Self> {
         use std::str;
-        let value = not_none!(value);
         let string = str::from_utf8(DB::as_bytes(value))?;
         Ok(string as *const _)
     }
@@ -171,7 +166,7 @@ where
     DB: Backend,
     *const [u8]: FromSql<ST, DB>,
 {
-    fn from_sql(bytes: Option<backend::RawValue<DB>>) -> deserialize::Result<Self> {
+    fn from_sql(bytes: backend::RawValue<DB>) -> deserialize::Result<Self> {
         let slice_ptr = <*const [u8] as FromSql<ST, DB>>::from_sql(bytes)?;
         // We know that the pointer impl will never return null
         let bytes = unsafe { &*slice_ptr };
@@ -188,8 +183,8 @@ impl<DB> FromSql<sql_types::Binary, DB> for *const [u8]
 where
     DB: Backend + for<'a> BinaryRawValue<'a>,
 {
-    fn from_sql(bytes: Option<backend::RawValue<DB>>) -> deserialize::Result<Self> {
-        Ok(DB::as_bytes(not_none!(bytes)) as *const _)
+    fn from_sql(bytes: backend::RawValue<DB>) -> deserialize::Result<Self> {
+        Ok(DB::as_bytes(bytes) as *const _)
     }
 }
 
@@ -230,42 +225,56 @@ where
     DB: Backend,
     T::Owned: FromSql<ST, DB>,
 {
-    fn from_sql(bytes: Option<backend::RawValue<DB>>) -> deserialize::Result<Self> {
+    fn from_sql(bytes: backend::RawValue<DB>) -> deserialize::Result<Self> {
         T::Owned::from_sql(bytes).map(Cow::Owned)
     }
 }
 
-impl<'a, T: ?Sized, ST, DB> FromSqlRow<ST, DB> for Cow<'a, T>
+impl<'a, T: ?Sized, ST, DB> FromSqlRow<Typed<ST>, DB> for Cow<'a, T>
 where
     T: 'a + ToOwned,
     DB: Backend,
     Cow<'a, T>: FromSql<ST, DB>,
 {
-    fn build_from_row<R: crate::row::Row<DB>>(row: &mut R) -> deserialize::Result<Self> {
-        FromSql::<ST, DB>::from_sql(row.take())
+    fn build_from_row<'b, R: crate::row::Row<'b, DB>>(row: &mut R) -> deserialize::Result<Self>
+    where
+        R::Item: crate::row::Field<'b, DB>,
+    {
+        use crate::row::Field;
+        FromSql::<ST, DB>::from_nullable_sql(
+            row.next()
+                .ok_or_else(|| String::from("Unexpected end of row"))?
+                .value(),
+        )
+    }
+
+    fn is_null<'b, R: crate::row::Row<'b, DB>>(row: &mut R) -> bool
+    where
+        R::Item: crate::row::Field<'b, DB>,
+    {
+        row.next()
+            .map(|v| crate::row::Field::is_null(&v))
+            .unwrap_or(false)
     }
 }
 
-impl<'a, T: ?Sized, ST, DB> Queryable<ST, DB> for Cow<'a, T>
+impl<'a, T: ?Sized, ST, DB> StaticallySizedRow<ST, DB> for Cow<'a, T>
 where
     T: 'a + ToOwned,
     DB: Backend,
     Self: FromSqlRow<ST, DB>,
 {
-    type Row = Self;
-
-    fn build(row: Self::Row) -> Self {
-        row
-    }
 }
 
 use crate::expression::bound::Bound;
 use crate::expression::{AsExpression, Expression};
+use sql_types::{SqlType, Typed};
 
 impl<'a, T: ?Sized, ST> AsExpression<ST> for Cow<'a, T>
 where
     T: 'a + ToOwned,
-    Bound<ST, Cow<'a, T>>: Expression<SqlType = ST>,
+    Bound<ST, Cow<'a, T>>: Expression<SqlType = Typed<ST>>,
+    ST: SqlType,
 {
     type Expression = Bound<ST, Self>;
 
@@ -277,7 +286,8 @@ where
 impl<'a, 'b, T: ?Sized, ST> AsExpression<ST> for &'b Cow<'a, T>
 where
     T: 'a + ToOwned,
-    Bound<ST, &'b T>: Expression<SqlType = ST>,
+    Bound<ST, &'b T>: Expression<SqlType = Typed<ST>>,
+    ST: SqlType,
 {
     type Expression = Bound<ST, &'b T>;
 

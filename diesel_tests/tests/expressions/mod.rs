@@ -11,6 +11,7 @@ use crate::schema::{
 use diesel::backend::Backend;
 use diesel::dsl::*;
 use diesel::query_builder::*;
+use diesel::sql_types::Typed;
 use diesel::*;
 
 #[test]
@@ -153,7 +154,7 @@ struct Arbitrary<T> {
 }
 
 impl<T> Expression for Arbitrary<T> {
-    type SqlType = T;
+    type SqlType = Typed<T>;
 }
 
 impl<T, DB> QueryFragment<DB> for Arbitrary<T>

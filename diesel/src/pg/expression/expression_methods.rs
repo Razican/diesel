@@ -2,7 +2,7 @@
 
 use super::operators::*;
 use crate::expression::{AsExpression, Expression};
-use crate::sql_types::{Array, Nullable, Range, Text};
+use crate::sql_types::{Array, Nullable, Range, SqlType, Text};
 
 /// PostgreSQL specific methods which are present on all expressions.
 pub trait PgExpressionMethods: Expression + Sized {
@@ -27,7 +27,9 @@ pub trait PgExpressionMethods: Expression + Sized {
     /// ```
     fn is_not_distinct_from<T>(self, other: T) -> IsNotDistinctFrom<Self, T::Expression>
     where
-        T: AsExpression<Self::SqlType>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
     {
         IsNotDistinctFrom::new(self, other.as_expression())
     }
@@ -53,7 +55,9 @@ pub trait PgExpressionMethods: Expression + Sized {
     /// ```
     fn is_distinct_from<T>(self, other: T) -> IsDistinctFrom<Self, T::Expression>
     where
-        T: AsExpression<Self::SqlType>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
     {
         IsDistinctFrom::new(self, other.as_expression())
     }
@@ -62,7 +66,7 @@ pub trait PgExpressionMethods: Expression + Sized {
 impl<T: Expression> PgExpressionMethods for T {}
 
 use super::date_and_time::{AtTimeZone, DateTimeLike};
-use crate::sql_types::VarChar;
+use crate::sql_types::{Typed, TypedSql, VarChar};
 
 /// PostgreSQL specific methods present on timestamp expressions.
 pub trait PgTimestampExpressionMethods: Expression + Sized {
@@ -187,7 +191,9 @@ pub trait PgArrayExpressionMethods: Expression + Sized {
     /// ```
     fn overlaps_with<T>(self, other: T) -> OverlapsWith<Self, T::Expression>
     where
-        T: AsExpression<Self::SqlType>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
     {
         OverlapsWith::new(self, other.as_expression())
     }
@@ -236,7 +242,9 @@ pub trait PgArrayExpressionMethods: Expression + Sized {
     /// ```
     fn contains<T>(self, other: T) -> Contains<Self, T::Expression>
     where
-        T: AsExpression<Self::SqlType>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
     {
         Contains::new(self, other.as_expression())
     }
@@ -286,7 +294,9 @@ pub trait PgArrayExpressionMethods: Expression + Sized {
     /// ```
     fn is_contained_by<T>(self, other: T) -> IsContainedBy<Self, T::Expression>
     where
-        T: AsExpression<Self::SqlType>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: SqlType,
+        T: AsExpression<<Self::SqlType as TypedSql>::Inner>,
     {
         IsContainedBy::new(self, other.as_expression())
     }
@@ -305,10 +315,13 @@ where
 /// this trait.
 pub trait ArrayOrNullableArray {}
 
-impl<T> ArrayOrNullableArray for Array<T> {}
-impl<T> ArrayOrNullableArray for Nullable<Array<T>> {}
+impl<T> ArrayOrNullableArray for Typed<Array<T>> {}
+impl<T> ArrayOrNullableArray for Typed<Nullable<Array<T>>> {}
 
-use crate::expression::operators::{Asc, Desc};
+use crate::{
+    expression::operators::{Asc, Desc},
+    EscapeExpressionMethods,
+};
 
 /// PostgreSQL expression methods related to sorting.
 ///
@@ -440,8 +453,11 @@ pub trait PgTextExpressionMethods: Expression + Sized {
     /// #     Ok(())
     /// # }
     /// ```
-    fn ilike<T: AsExpression<Text>>(self, other: T) -> ILike<Self, T::Expression> {
-        ILike::new(self.as_expression(), other.as_expression())
+    fn ilike<T>(self, other: T) -> ILike<Self, T::Expression>
+    where
+        T: AsExpression<Text>,
+    {
+        ILike::new(self, other.as_expression())
     }
 
     /// Creates a PostgreSQL `NOT ILIKE` expression
@@ -466,8 +482,11 @@ pub trait PgTextExpressionMethods: Expression + Sized {
     /// #     Ok(())
     /// # }
     /// ```
-    fn not_ilike<T: AsExpression<Text>>(self, other: T) -> NotILike<Self, T::Expression> {
-        NotILike::new(self.as_expression(), other.as_expression())
+    fn not_ilike<T>(self, other: T) -> NotILike<Self, T::Expression>
+    where
+        T: AsExpression<Text>,
+    {
+        NotILike::new(self, other.as_expression())
     }
 }
 
@@ -477,8 +496,8 @@ pub trait PgTextExpressionMethods: Expression + Sized {
 /// this trait.
 pub trait TextOrNullableText {}
 
-impl TextOrNullableText for Text {}
-impl TextOrNullableText for Nullable<Text> {}
+impl TextOrNullableText for Typed<Text> {}
+impl TextOrNullableText for Typed<Nullable<Text>> {}
 
 impl<T> PgTextExpressionMethods for T
 where
@@ -486,6 +505,9 @@ where
     T::SqlType: TextOrNullableText,
 {
 }
+
+impl<T, U> EscapeExpressionMethods for ILike<T, U> {}
+impl<T, U> EscapeExpressionMethods for NotILike<T, U> {}
 
 #[doc(hidden)]
 /// Marker trait used to extract the inner type
@@ -546,11 +568,27 @@ pub trait PgRangeExpressionMethods: Expression + Sized {
     /// ```
     fn contains<T>(self, other: T) -> Contains<Self, T::Expression>
     where
-        Self::SqlType: RangeHelper,
-        T: AsExpression<<Self::SqlType as RangeHelper>::Inner>,
+        Self::SqlType: TypedSql,
+        <Self::SqlType as TypedSql>::Inner: RangeHelper,
+        <<Self::SqlType as TypedSql>::Inner as RangeHelper>::Inner: SqlType,
+        T: AsExpression<<<Self::SqlType as TypedSql>::Inner as RangeHelper>::Inner>,
     {
         Contains::new(self, other.as_expression())
     }
 }
 
-impl<T, ST> PgRangeExpressionMethods for T where T: Expression<SqlType = Range<ST>> {}
+#[doc(hidden)]
+/// Marker trait used to implement `PgRangeExpressionMethods` on the appropriate
+/// types. Once coherence takes associated types into account, we can remove
+/// this trait.
+pub trait RangeOrNullableRange {}
+
+impl<ST> RangeOrNullableRange for Typed<Range<ST>> {}
+impl<ST> RangeOrNullableRange for Typed<Nullable<Range<ST>>> {}
+
+impl<T> PgRangeExpressionMethods for T
+where
+    T: Expression,
+    T::SqlType: RangeOrNullableRange,
+{
+}

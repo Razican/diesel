@@ -5,7 +5,7 @@ macro_rules! __diesel_operator_body {
         notation = $notation:ident,
         struct_name = $name:ident,
         operator = $operator:expr,
-        return_ty = ReturnBasedOnArgs,
+        return_ty = (ReturnBasedOnArgs),
         ty_params = ($($ty_param:ident,)+),
         field_names = $field_names:tt,
         backend_ty_params = $backend_ty_params:tt,
@@ -15,7 +15,7 @@ macro_rules! __diesel_operator_body {
             notation = $notation,
             struct_name = $name,
             operator = $operator,
-            return_ty = ST,
+            return_ty = (ST),
             ty_params = ($($ty_param,)+),
             field_names = $field_names,
             backend_ty_params = $backend_ty_params,
@@ -29,7 +29,7 @@ macro_rules! __diesel_operator_body {
         notation = $notation:ident,
         struct_name = $name:ident,
         operator = $operator:expr,
-        return_ty = $return_ty:ty,
+        return_ty = ($($return_ty:tt)+),
         ty_params = ($($ty_param:ident,)+),
         field_names = $field_names:tt,
         backend_ty_params = $backend_ty_params:tt,
@@ -39,7 +39,7 @@ macro_rules! __diesel_operator_body {
             notation = $notation,
             struct_name = $name,
             operator = $operator,
-            return_ty = $return_ty,
+            return_ty = ($($return_ty)*),
             ty_params = ($($ty_param,)+),
             field_names = $field_names,
             backend_ty_params = $backend_ty_params,
@@ -53,7 +53,7 @@ macro_rules! __diesel_operator_body {
         notation = $notation:ident,
         struct_name = $name:ident,
         operator = $operator:expr,
-        return_ty = $return_ty:ty,
+        return_ty = ($($return_ty:tt)+),
         ty_params = ($($ty_param:ident,)+),
         field_names = ($($field_name:ident,)+),
         backend_ty_params = ($($backend_ty_param:ident,)*),
@@ -85,7 +85,7 @@ macro_rules! __diesel_operator_body {
         impl<$($ty_param,)+ $($expression_ty_params,)*> $crate::expression::Expression for $name<$($ty_param,)+> where
             $($expression_bounds)*
         {
-            type SqlType = $return_ty;
+            type SqlType = $crate::sql_types::Typed<$($return_ty)*>;
         }
 
         impl<$($ty_param,)+ $($backend_ty_param,)*> $crate::query_builder::QueryFragment<$backend_ty>
@@ -223,11 +223,21 @@ macro_rules! infix_operator {
             notation = infix,
             struct_name = $name,
             operator = $operator,
-            return_ty = $($return_ty)::*,
+            return_ty = (
+                <<<T as $crate::expression::Expression>::SqlType as $crate::sql_types::TypedSql>::Inner as $crate::sql_types::NullableIfOneIsNullable<<<U as $crate::expression::Expression>::SqlType as $crate::sql_types::TypedSql>::Inner, $($return_ty)::*>>::Out,
+            ),
             ty_params = (T, U,),
             field_names = (left, right,),
             backend_ty_params = (DB,),
             backend_ty = DB,
+            expression_ty_params = (),
+            expression_bounds = (
+                T: $crate::expression::Expression,
+                U: $crate::expression::Expression,
+                <T as $crate::expression::Expression>::SqlType: $crate::sql_types::TypedSql,
+                <U as $crate::expression::Expression>::SqlType: $crate::sql_types::TypedSql,
+                <<T as $crate::expression::Expression>::SqlType as $crate::sql_types::TypedSql>::Inner: $crate::sql_types::NullableIfOneIsNullable<<<U as $crate::expression::Expression>::SqlType as $crate::sql_types::TypedSql>::Inner, $($return_ty)::*>,
+            ),
         );
     };
 
@@ -236,11 +246,21 @@ macro_rules! infix_operator {
             notation = infix,
             struct_name = $name,
             operator = $operator,
-            return_ty = $return_ty,
+            return_ty = (
+                <<<T as $crate::expression::Expression>::SqlType as $crate::sql_types::TypedSql>::Inner as $crate::sql_types::NullableIfOneIsNullable<<<U as $crate::expression::Expression>::SqlType as $crate::sql_types::TypedSql>::Inner, $return_ty>>::Out,
+            ),
             ty_params = (T, U,),
             field_names = (left, right,),
             backend_ty_params = (),
             backend_ty = $backend,
+            expression_ty_params = (),
+            expression_bounds = (
+                T: $crate::expression::Expression,
+                U: $crate::expression::Expression,
+                <T as $crate::expression::Expression>::SqlType: $crate::sql_types::TypedSql,
+                <U as $crate::expression::Expression>::SqlType: $crate::sql_types::TypedSql,
+                <<T as $crate::expression::Expression>::SqlType as $crate::sql_types::TypedSql>::Inner: $crate::sql_types::NullableIfOneIsNullable<<<U as $crate::expression::Expression>::SqlType as $crate::sql_types::TypedSql>::Inner, $return_ty>,
+            ),
         );
     };
 }
@@ -278,7 +298,7 @@ macro_rules! postfix_operator {
             notation = postfix,
             struct_name = $name,
             operator = $operator,
-            return_ty = $return_ty,
+            return_ty = ($return_ty),
             ty_params = (Expr,),
             field_names = (expr,),
             backend_ty_params = (DB,),
@@ -291,7 +311,7 @@ macro_rules! postfix_operator {
             notation = postfix,
             struct_name = $name,
             operator = $operator,
-            return_ty = $return_ty,
+            return_ty = ($return_ty),
             ty_params = (Expr,),
             field_names = (expr,),
             backend_ty_params = (),
@@ -333,7 +353,7 @@ macro_rules! prefix_operator {
             notation = prefix,
             struct_name = $name,
             operator = $operator,
-            return_ty = $return_ty,
+            return_ty = ($return_ty),
             ty_params = (Expr,),
             field_names = (expr,),
             backend_ty_params = (DB,),
@@ -346,7 +366,7 @@ macro_rules! prefix_operator {
             notation = prefix,
             struct_name = $name,
             operator = $operator,
-            return_ty = $return_ty,
+            return_ty = ($return_ty),
             ty_params = (Expr,),
             field_names = (expr,),
             backend_ty_params = (),
@@ -377,7 +397,6 @@ infix_operator!(LtEq, " <= ");
 infix_operator!(NotBetween, " NOT BETWEEN ");
 infix_operator!(NotEq, " != ");
 infix_operator!(NotLike, " NOT LIKE ");
-infix_operator!(Or, " OR ");
 
 postfix_operator!(IsNull, " IS NULL");
 postfix_operator!(IsNotNull, " IS NOT NULL");
@@ -390,7 +409,13 @@ use crate::expression::ValidGrouping;
 use crate::insertable::{ColumnInsertValue, Insertable};
 use crate::query_builder::{QueryId, ValuesClause};
 use crate::query_source::Column;
-use crate::sql_types::DieselNumericOps;
+use crate::{
+    sql_types::{
+        Bool, DieselNumericOps, IsNullable, MaybeNullableType, NotNull, SqlType,
+        TypedExpressionType, TypedSql,
+    },
+    Expression,
+};
 
 impl<T, U> Insertable<T::Table> for Eq<T, U>
 where
@@ -432,6 +457,7 @@ impl<L, R, ST> crate::expression::Expression for Concat<L, R>
 where
     L: crate::expression::Expression<SqlType = ST>,
     R: crate::expression::Expression<SqlType = ST>,
+    ST: TypedSql + TypedExpressionType,
 {
     type SqlType = ST;
 }
@@ -455,6 +481,88 @@ where
         out.push_sql(" || ");
         self.right.walk_ast(out.reborrow())?;
         out.push_sql(")");
+        Ok(())
+    }
+}
+
+// or is different
+// it only evaluates to null if both sides are null
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    crate::query_builder::QueryId,
+    crate::sql_types::DieselNumericOps,
+    crate::expression::ValidGrouping,
+)]
+#[doc(hidden)]
+pub struct Or<T, U> {
+    pub(crate) left: T,
+    pub(crate) right: U,
+}
+
+impl<T, U> Or<T, U> {
+    pub fn new(left: T, right: U) -> Self {
+        Or { left, right }
+    }
+}
+
+impl_selectable_expression!(Or<T, U>);
+
+pub trait AllIsNullable<Other> {
+    type Out: AllIsNullable<NotNull> + AllIsNullable<IsNullable>;
+}
+
+impl AllIsNullable<NotNull> for NotNull {
+    type Out = NotNull;
+}
+
+impl AllIsNullable<IsNullable> for NotNull {
+    type Out = NotNull;
+}
+
+impl AllIsNullable<NotNull> for IsNullable {
+    type Out = NotNull;
+}
+
+impl AllIsNullable<IsNullable> for IsNullable {
+    type Out = IsNullable;
+}
+
+impl<T, U> Expression for Or<T, U>
+where
+    T: Expression,
+    U: Expression,
+    T::SqlType: TypedSql,
+    U::SqlType: TypedSql,
+    <T::SqlType as TypedSql>::Inner: SqlType,
+    <U::SqlType as TypedSql>::Inner: SqlType,
+    <<T::SqlType as TypedSql>::Inner as SqlType>::IsNull:
+        AllIsNullable<<<U::SqlType as TypedSql>::Inner as SqlType>::IsNull>,
+    <<<T::SqlType as TypedSql>::Inner as SqlType>::IsNull as AllIsNullable<
+        <<U::SqlType as TypedSql>::Inner as SqlType>::IsNull,
+    >>::Out: MaybeNullableType<Bool>,
+{
+    type SqlType = crate::sql_types::Typed<
+        <<<<T::SqlType as TypedSql>::Inner as SqlType>::IsNull as AllIsNullable<
+            <<U::SqlType as TypedSql>::Inner as SqlType>::IsNull,
+        >>::Out as MaybeNullableType<Bool>>::Out,
+    >;
+}
+
+impl<T, U, DB> crate::query_builder::QueryFragment<DB> for Or<T, U>
+where
+    DB: crate::backend::Backend,
+    T: crate::query_builder::QueryFragment<DB>,
+    U: crate::query_builder::QueryFragment<DB>,
+{
+    fn walk_ast(
+        &self,
+        mut out: crate::query_builder::AstPass<DB>,
+    ) -> crate::result::QueryResult<()> {
+        self.left.walk_ast(out.reborrow())?;
+        out.push_sql(" OR ");
+        self.right.walk_ast(out.reborrow())?;
         Ok(())
     }
 }

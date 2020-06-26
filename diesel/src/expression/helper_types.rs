@@ -7,7 +7,7 @@ use super::{AsExpression, Expression};
 use crate::sql_types;
 
 /// The SQL type of an expression
-pub type SqlTypeOf<Expr> = <Expr as Expression>::SqlType;
+pub type SqlTypeOf<Expr> = <<Expr as Expression>::SqlType as sql_types::TypedSql>::Inner;
 
 /// The type of `Item` when converted to an expression with the same type as `TargetExpr`
 pub type AsExpr<Item, TargetExpr> = AsExprOf<Item, SqlTypeOf<TargetExpr>>;

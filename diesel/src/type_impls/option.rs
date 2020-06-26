@@ -1,19 +1,19 @@
 use std::io::Write;
 
 use crate::backend::{self, Backend};
-use crate::deserialize::{self, FromSql, FromSqlRow, Queryable, QueryableByName};
+use crate::deserialize::{self, FromSql, FromSqlRow, StaticallySizedRow};
 use crate::expression::bound::Bound;
 use crate::expression::*;
 use crate::query_builder::QueryId;
-use crate::result::UnexpectedNullError;
-use crate::row::NamedRow;
 use crate::serialize::{self, IsNull, Output, ToSql};
-use crate::sql_types::{HasSqlType, NotNull, Nullable};
+use crate::sql_types::{
+    HasSqlType, IntoNotNullable, IsNullable, NotNull, Nullable, SqlType, Typed,
+};
 
 impl<T, DB> HasSqlType<Nullable<T>> for DB
 where
     DB: Backend + HasSqlType<T>,
-    T: NotNull,
+    T: SqlType,
 {
     fn metadata(lookup: &DB::MetadataLookup) -> DB::TypeMetadata {
         <DB as HasSqlType<T>>::metadata(lookup)
@@ -27,7 +27,7 @@ where
 
 impl<T> QueryId for Nullable<T>
 where
-    T: QueryId + NotNull,
+    T: QueryId + SqlType<IsNull = NotNull>,
 {
     type QueryId = T::QueryId;
 
@@ -38,69 +38,62 @@ impl<T, ST, DB> FromSql<Nullable<ST>, DB> for Option<T>
 where
     T: FromSql<ST, DB>,
     DB: Backend,
-    ST: NotNull,
+    ST: SqlType<IsNull = NotNull>,
 {
-    fn from_sql(bytes: Option<backend::RawValue<DB>>) -> deserialize::Result<Self> {
+    fn from_sql(bytes: backend::RawValue<DB>) -> deserialize::Result<Self> {
+        T::from_sql(bytes).map(Some)
+    }
+
+    fn from_nullable_sql(bytes: Option<backend::RawValue<DB>>) -> deserialize::Result<Self> {
         match bytes {
-            Some(_) => T::from_sql(bytes).map(Some),
+            Some(bytes) => T::from_sql(bytes).map(Some),
             None => Ok(None),
         }
     }
 }
 
-impl<T, ST, DB> Queryable<Nullable<ST>, DB> for Option<T>
+impl<T, ST, DB> FromSqlRow<Typed<ST>, DB> for Option<T>
 where
-    T: Queryable<ST, DB>,
     DB: Backend,
-    Option<T::Row>: FromSqlRow<Nullable<ST>, DB>,
-    ST: NotNull,
+    ST: SqlType<IsNull = IsNullable> + IntoNotNullable,
+    T: FromSqlRow<Typed<ST::NotNullable>, DB>,
 {
-    type Row = Option<T::Row>;
+    fn build_from_row<'a, R: crate::row::Row<'a, DB>>(row: &mut R) -> deserialize::Result<Self>
+    where
+        R::Item: crate::row::Field<'a, DB>,
+    {
+        let mut iter = row.clone();
+        if T::is_null(row) {
+            Ok(None)
+        } else {
+            T::build_from_row(&mut iter).map(Some)
+        }
+    }
 
-    fn build(row: Self::Row) -> Self {
-        row.map(T::build)
+    fn is_null<'a, R: crate::row::Row<'a, DB>>(row: &mut R) -> bool
+    where
+        R::Item: crate::row::Field<'a, DB>,
+    {
+        T::is_null(row);
+        false
     }
 }
 
-impl<T, DB> QueryableByName<DB> for Option<T>
+impl<T, ST, DB> StaticallySizedRow<Typed<Nullable<ST>>, DB> for Option<T>
 where
-    T: QueryableByName<DB>,
+    T: StaticallySizedRow<Typed<ST>, DB>,
+    ST: SqlType,
     DB: Backend,
+    Self: FromSqlRow<Typed<Nullable<ST>>, DB>,
 {
-    fn build<R: NamedRow<DB>>(row: &R) -> deserialize::Result<Self> {
-        match T::build(row) {
-            Ok(v) => Ok(Some(v)),
-            Err(e) => {
-                if e.is::<UnexpectedNullError>() {
-                    Ok(None)
-                } else {
-                    Err(e)
-                }
-            }
-        }
-    }
-}
-
-impl<T, ST, DB> FromSqlRow<Nullable<ST>, DB> for Option<T>
-where
-    T: FromSqlRow<ST, DB>,
-    DB: Backend,
-    ST: NotNull,
-{
-    fn build_from_row<R: crate::row::Row<DB>>(row: &mut R) -> deserialize::Result<Self> {
-        match T::build_from_row(row) {
-            Ok(v) => Ok(Some(v)),
-            Err(e) if e.is::<UnexpectedNullError>() => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
+    const FIELD_COUNT: usize = T::FIELD_COUNT;
 }
 
 impl<T, ST, DB> ToSql<Nullable<ST>, DB> for Option<T>
 where
     T: ToSql<ST, DB>,
     DB: Backend,
-    ST: NotNull,
+    ST: SqlType<IsNull = NotNull>,
 {
     fn to_sql<W: Write>(&self, out: &mut Output<W, DB>) -> serialize::Result {
         if let Some(ref value) = *self {
@@ -113,7 +106,7 @@ where
 
 impl<T, ST> AsExpression<Nullable<ST>> for Option<T>
 where
-    ST: NotNull,
+    ST: SqlType<IsNull = NotNull>,
 {
     type Expression = Bound<Nullable<ST>, Self>;
 
@@ -124,7 +117,7 @@ where
 
 impl<'a, T, ST> AsExpression<Nullable<ST>> for &'a Option<T>
 where
-    ST: NotNull,
+    ST: SqlType<IsNull = NotNull>,
 {
     type Expression = Bound<Nullable<ST>, Self>;
 

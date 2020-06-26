@@ -4,253 +4,15 @@ use std::error::Error;
 use std::result;
 
 use crate::backend::{self, Backend};
-use crate::row::{NamedRow, Row};
+use crate::row::{Field, Row};
+use crate::sql_types::{HasSqlType, TypeMetadata, Typed, Untyped};
 
 /// A specialized result type representing the result of deserializing
 /// a value from the database.
 pub type Result<T> = result::Result<T, Box<dyn Error + Send + Sync>>;
 
-/// Trait indicating that a record can be queried from the database.
-///
-/// Types which implement `Queryable` represent the result of a SQL query. This
-/// does not necessarily mean they represent a single database table.
-///
-/// Diesel represents the return type of a query as a tuple. The purpose of this
-/// trait is to convert from a tuple of Rust values that have been deserialized
-/// into your struct.
-///
-/// This trait can be [derived](derive.Queryable.html)
-///
-/// # Examples
-///
-/// If we just want to map a query to our struct, we can use `derive`.
-///
-/// ```rust
-/// # include!("doctest_setup.rs");
-/// #
-/// #[derive(Queryable, PartialEq, Debug)]
-/// struct User {
-///     id: i32,
-///     name: String,
-/// }
-///
-/// # fn main() {
-/// #     run_test();
-/// # }
-/// #
-/// # fn run_test() -> QueryResult<()> {
-/// #     use schema::users::dsl::*;
-/// #     let connection = establish_connection();
-/// let first_user = users.first(&connection)?;
-/// let expected = User { id: 1, name: "Sean".into() };
-/// assert_eq!(expected, first_user);
-/// #     Ok(())
-/// # }
-/// ```
-///
-/// If we want to do additional work during deserialization, we can use
-/// `deserialize_as` to use a different implementation.
-///
-/// ```rust
-/// # include!("doctest_setup.rs");
-/// #
-/// # use schema::users;
-/// # use diesel::backend::{self, Backend};
-/// # use diesel::deserialize::Queryable;
-/// #
-/// struct LowercaseString(String);
-///
-/// impl Into<String> for LowercaseString {
-///     fn into(self) -> String {
-///         self.0
-///     }
-/// }
-///
-/// impl<DB, ST> Queryable<ST, DB> for LowercaseString
-/// where
-///     DB: Backend,
-///     String: Queryable<ST, DB>,
-/// {
-///     type Row = <String as Queryable<ST, DB>>::Row;
-///
-///     fn build(row: Self::Row) -> Self {
-///         LowercaseString(String::build(row).to_lowercase())
-///     }
-/// }
-///
-/// #[derive(Queryable, PartialEq, Debug)]
-/// struct User {
-///     id: i32,
-///     #[diesel(deserialize_as = "LowercaseString")]
-///     name: String,
-/// }
-///
-/// # fn main() {
-/// #     run_test();
-/// # }
-/// #
-/// # fn run_test() -> QueryResult<()> {
-/// #     use schema::users::dsl::*;
-/// #     let connection = establish_connection();
-/// let first_user = users.first(&connection)?;
-/// let expected = User { id: 1, name: "sean".into() };
-/// assert_eq!(expected, first_user);
-/// #     Ok(())
-/// # }
-/// ```
-///
-/// Alternatively, we can implement the trait for our struct manually.
-///
-/// ```rust
-/// # include!("doctest_setup.rs");
-/// #
-/// use schema::users;
-/// use diesel::deserialize::Queryable;
-///
-/// # /*
-/// type DB = diesel::sqlite::Sqlite;
-/// # */
-///
-/// #[derive(PartialEq, Debug)]
-/// struct User {
-///     id: i32,
-///     name: String,
-/// }
-///
-/// impl Queryable<users::SqlType, DB> for User {
-///     type Row = (i32, String);
-///
-///     fn build(row: Self::Row) -> Self {
-///         User {
-///             id: row.0,
-///             name: row.1.to_lowercase(),
-///         }
-///     }
-/// }
-///
-/// # fn main() {
-/// #     run_test();
-/// # }
-/// #
-/// # fn run_test() -> QueryResult<()> {
-/// #     use schema::users::dsl::*;
-/// #     let connection = establish_connection();
-/// let first_user = users.first(&connection)?;
-/// let expected = User { id: 1, name: "sean".into() };
-/// assert_eq!(expected, first_user);
-/// #     Ok(())
-/// # }
-/// ```
-pub trait Queryable<ST, DB>
-where
-    DB: Backend,
-{
-    /// The Rust type you'd like to map from.
-    ///
-    /// This is typically a tuple of all of your struct's fields.
-    type Row: FromSqlRow<ST, DB>;
-
-    /// Construct an instance of this type
-    fn build(row: Self::Row) -> Self;
-}
-
 #[doc(inline)]
 pub use diesel_derives::Queryable;
-
-/// Deserializes the result of a query constructed with [`sql_query`].
-///
-/// This trait can be [derived](derive.QueryableByName.html)
-///
-/// [`sql_query`]: ../fn.sql_query.html
-///
-/// # Examples
-///
-/// If we just want to map a query to our struct, we can use `derive`.
-///
-/// ```rust
-/// # include!("doctest_setup.rs");
-/// # use schema::users;
-/// # use diesel::sql_query;
-/// #
-/// #[derive(QueryableByName, PartialEq, Debug)]
-/// #[table_name = "users"]
-/// struct User {
-///     id: i32,
-///     name: String,
-/// }
-///
-/// # fn main() {
-/// #     run_test();
-/// # }
-/// #
-/// # fn run_test() -> QueryResult<()> {
-/// #     let connection = establish_connection();
-/// let first_user = sql_query("SELECT * FROM users ORDER BY id LIMIT 1")
-///     .get_result(&connection)?;
-/// let expected = User { id: 1, name: "Sean".into() };
-/// assert_eq!(expected, first_user);
-/// #     Ok(())
-/// # }
-/// ```
-///
-/// If we want to do additional work during deserialization, we can use
-/// `deserialize_as` to use a different implementation.
-///
-/// ```rust
-/// # include!("doctest_setup.rs");
-/// # use diesel::sql_query;
-/// # use schema::users;
-/// # use diesel::backend::{self, Backend};
-/// # use diesel::deserialize::{self, FromSql};
-/// #
-/// struct LowercaseString(String);
-///
-/// impl Into<String> for LowercaseString {
-///     fn into(self) -> String {
-///         self.0
-///     }
-/// }
-///
-/// impl<DB, ST> FromSql<ST, DB> for LowercaseString
-/// where
-///     DB: Backend,
-///     String: FromSql<ST, DB>,
-/// {
-///     fn from_sql(bytes: Option<backend::RawValue<DB>>) -> deserialize::Result<Self> {
-///         String::from_sql(bytes)
-///             .map(|s| LowercaseString(s.to_lowercase()))
-///     }
-/// }
-///
-/// #[derive(QueryableByName, PartialEq, Debug)]
-/// #[table_name = "users"]
-/// struct User {
-///     id: i32,
-///     #[diesel(deserialize_as = "LowercaseString")]
-///     name: String,
-/// }
-///
-/// # fn main() {
-/// #     run_test();
-/// # }
-/// #
-/// # fn run_test() -> QueryResult<()> {
-/// #     let connection = establish_connection();
-/// let first_user = sql_query("SELECT * FROM users ORDER BY id LIMIT 1")
-///     .get_result(&connection)?;
-/// let expected = User { id: 1, name: "sean".into() };
-/// assert_eq!(expected, first_user);
-/// #     Ok(())
-/// # }
-/// ```
-pub trait QueryableByName<DB>
-where
-    Self: Sized,
-    DB: Backend,
-{
-    /// Construct an instance of `Self` from the database row
-    fn build<R: NamedRow<DB>>(row: &R) -> Result<Self>;
-}
 
 #[doc(inline)]
 pub use diesel_derives::QueryableByName;
@@ -299,7 +61,7 @@ pub use diesel_derives::QueryableByName;
 ///     DB: Backend,
 ///     i32: FromSql<Integer, DB>,
 /// {
-///     fn from_sql(bytes: Option<backend::RawValue<DB>>) -> deserialize::Result<Self> {
+///     fn from_sql(bytes: backend::RawValue<DB>) -> deserialize::Result<Self> {
 ///         match i32::from_sql(bytes)? {
 ///             1 => Ok(MyEnum::A),
 ///             2 => Ok(MyEnum::B),
@@ -310,8 +72,218 @@ pub use diesel_derives::QueryableByName;
 /// ```
 pub trait FromSql<A, DB: Backend>: Sized {
     /// See the trait documentation.
-    fn from_sql(bytes: Option<backend::RawValue<DB>>) -> Result<Self>;
+    fn from_sql(bytes: backend::RawValue<DB>) -> Result<Self>;
+
+    fn from_nullable_sql(bytes: Option<backend::RawValue<DB>>) -> Result<Self> {
+        match bytes {
+            Some(bytes) => Self::from_sql(bytes),
+            None => return Err(Box::new(crate::result::UnexpectedNullError)),
+        }
+    }
 }
+
+pub trait IsCompatibleType<DB> {
+    type Compatible;
+
+    #[doc(hidden)]
+    #[cfg(feature = "mysql")]
+    fn mysql_row_metadata(_lookup: &DB::MetadataLookup) -> Option<Vec<DB::TypeMetadata>>
+    where
+        DB: Backend + TypeMetadata,
+    {
+        None
+    }
+}
+
+// Any typed row with the same sql type is compatible
+impl<ST, DB> IsCompatibleType<DB> for Typed<ST>
+where
+    DB: Backend + HasSqlType<ST>,
+{
+    type Compatible = Typed<ST>;
+
+    #[cfg(feature = "mysql")]
+    fn mysql_row_metadata(lookup: &DB::MetadataLookup) -> Option<Vec<DB::TypeMetadata>>
+    where
+        DB: Backend + TypeMetadata,
+    {
+        let mut out = Vec::new();
+        <DB as HasSqlType<ST>>::mysql_row_metadata(&mut out, lookup);
+        Some(out)
+    }
+}
+
+// Any untyped row is compatible
+impl<DB> IsCompatibleType<DB> for Untyped
+where
+    DB: Backend,
+{
+    type Compatible = Untyped;
+}
+
+// // Any unorderd typed row is compatible with any untyped row
+// impl<ST, DB> IsCompatibleType<UntypedRow, DB> for UnorderedTypedRow<ST> where DB: Backend {}
+
+// impl<ST1, ST2, DB, I> IsCompatibleType<TypedRow<ST1>, DB, I> for UnorderedTypedRow<ST2> where
+//     UnorderedTypedRow<ST2>: IsCompatibleType<UnorderedTypedRow<ST1>, DB, I>
+// {
+//}
+
+// macro_rules! expand_tuple_impls {
+//     (
+//         @make_hlist_tuple: $T1: ident,
+//     ) => {
+//         ($T1, ())
+//     };
+//     (
+//         @make_hlist_tuple: $T1: ident, $($T: ident,)*
+//     ) => {
+//         ($T1, expand_tuple_impls!(@make_hlist_tuple: $($T,)*))
+//     };
+//     (
+//         @get_bounds:
+//         ts = [],
+//         tts = [],
+//         last = [
+//             ty = [$($last_ty:tt)*],
+//             bound = [$($bound:tt)*],
+//         ],
+//         aggregate = [
+//             $($aggrate:tt)*
+//         ],
+//         others = [
+//             ts = [$($T: ident,)*],
+//             sts = [$($ST: ident,)* ],
+//             tts = [$($TT: ident,)* ],
+//         ],
+//     ) => {
+//         expand_tuple_impls!(
+//             @impl:
+//             ts = [$($T,)*],
+//             sts = [$($ST,)*],
+//             tts = [$($TT,)*],
+//             bounds = [
+//                 $($aggrate)*
+//                 $($last_ty)*: $($bound)*,
+//             ],
+//         );
+//     };
+//     (
+//         @get_bounds:
+//         ts = [$T1: ident, $($T: ident,)*],
+//         tts = [$TT1: ident, $($TT: ident,)*],
+//         last = [
+//             ty = [$($last_ty:tt)*],
+//             bound = [$($bound:tt)*],
+//         ],
+//         aggregate = [
+//             $($aggregate:tt)*
+//         ],
+//         others = [$($others:tt)*],
+//     ) => {
+//         expand_tuple_impls!(
+//             @get_bounds:
+//             ts = [$($T,)*],
+//             tts = [$($TT,)*],
+//             last = [
+//                 ty = [<$($last_ty)* as $($bound)*>::Remainder],
+//                 bound = [Plucker<$T1, $TT1>],
+//             ],
+//             aggregate = [
+//                 $($aggregate)*
+//                 $($last_ty)*: $($bound)*,
+//             ],
+//             others = [$($others)*],
+//         );
+
+//     };
+//     (
+//         @get_bounds:
+//         ts = [$T1:ident, $($T: ident,)*],
+//         sts = [$($ST: ident,)*],
+//         tts = [$TT1: ident, $($TT: ident,)*],
+//     ) => {
+//         expand_tuple_impls!(
+//             @get_bounds:
+//             ts = [$($T,)*],
+//             tts = [$($TT,)*],
+//             last = [
+//                 ty = [expand_tuple_impls!(@make_hlist_tuple: $($ST,)*)],
+//                 bound = [Plucker<$T1, $TT1>],
+//             ],
+//             aggregate = [],
+//             others = [
+//                 ts = [$T1, $($T,)*],
+//                 sts = [$($ST,)*],
+//                 tts = [$TT1, $($TT,)*],
+//             ],
+//         );
+
+//     };
+//     (
+//         @impl:
+//         ts = [$($T: ident,)*],
+//         sts = [$($ST:ident,)*],
+//         tts = [$($TT:ident,)*],
+//         bounds = [$($bounds:tt)*],
+//     ) => {
+//         impl<$($T,)* $($ST,)* $($TT,)* __DB> IsCompatibleType<UnorderedTypedRow<($($ST,)*)>, __DB, ($($TT,)*)> for UnorderedTypedRow<($($T,)*)>
+//             where $($bounds)*
+//         {
+
+//         }
+//     };
+//     (@decouple2: ts = $T:tt, sts = [$({$($ST:ident,)*},)*], tts = $TT:tt,) => {
+//         $(
+//             expand_tuple_impls!(
+//                 @get_bounds:
+//                 ts = $T,
+//                 sts = [$($ST,)*],
+//                 tts = $TT,
+//             );
+//         )*
+//     };
+
+//     (@decouple: ts = [$({$($T:ident,)*},)*], sts = $ST:tt, tts = [$({$($TT: ident,)*},)*],) => {
+//         $(
+//             expand_tuple_impls!(
+//                 @decouple2:
+//                 ts = [$($T,)*],
+//                 sts = $ST,
+//                 tts = [$($TT,)*],
+//             );
+//         )*
+//     };
+//     (pairs = [$({ ts = [$($T: ident,)*], sts = [$($ST: ident,)*], tts = [$($TT: ident,)*]},)*]) => {
+//         expand_tuple_impls!(
+//             @decouple
+//             ts = [$({$($T,)*},)*].
+//             sts = [$({$($ST,)*},)*],
+//             tts = [$({$($TT,)*},)*],
+//         );
+//     }
+// }
+
+// macro_rules! tuple_impls {
+//     ($(
+//         $Tuple:tt {
+//             $(($idx:tt) -> $T:ident, $ST:ident, $TT:ident,)+
+//         }
+//     )+) => {
+//         expand_tuple_impls!(
+//             @decouple:
+//             ts = [$({$($T,)*},)*],
+//             sts = [$({$($ST,)*},)*],
+//             tts = [$({$($TT,)*},)*],
+//         );
+// //        expand_tuple_impls!(pairs = [$({ts = [$($T,)*], sts = [$($ST,)*], tts = [$($TT,)*]},)*]);
+
+//     }
+// }
+
+// //trace_macros!(true);
+// __diesel_for_each_tuple!(tuple_impls);
+// //trace_macros!(false);
 
 /// Deserialize one or more fields.
 ///
@@ -324,9 +296,15 @@ pub trait FromSql<A, DB: Backend>: Sized {
 /// impl would conflict with our impl for tuples.
 ///
 /// This trait can be [derived](derive.FromSqlRow.html)
-pub trait FromSqlRow<A, DB: Backend>: Sized {
+pub trait FromSqlRow<ST, DB: Backend>: Sized {
     /// See the trait documentation.
-    fn build_from_row<T: Row<DB>>(row: &mut T) -> Result<Self>;
+    fn build_from_row<'a, T: Row<'a, DB>>(row: &mut T) -> Result<Self>
+    where
+        T::Item: Field<'a, DB>;
+
+    fn is_null<'a, T: Row<'a, DB>>(row: &mut T) -> bool
+    where
+        T::Item: Field<'a, DB>;
 }
 
 #[doc(inline)]
@@ -341,7 +319,7 @@ pub use diesel_derives::FromSqlRow;
 /// this traits should not be implemented.
 ///
 /// This trait can be [derived](derive.FromSqlRow.html)
-pub trait StaticallySizedRow<A, DB: Backend>: FromSqlRow<A, DB> {
+pub trait StaticallySizedRow<ST, DB: Backend>: FromSqlRow<ST, DB> {
     /// The number of fields that this type will consume. Must be equal to
     /// the number of times you would call `row.take()` in `build_from_row`
     const FIELD_COUNT: usize = 1;

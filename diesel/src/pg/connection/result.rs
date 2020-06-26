@@ -1,7 +1,7 @@
 extern crate pq_sys;
 
 use self::pq_sys::*;
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::num::NonZeroU32;
 use std::os::raw as libc;
 use std::{slice, str};
@@ -126,15 +126,6 @@ impl PgResult {
 
     pub fn column_count(&self) -> usize {
         unsafe { PQnfields(self.internal_result.as_ptr()) as usize }
-    }
-
-    pub fn field_number(&self, column_name: &str) -> Option<usize> {
-        let cstr = CString::new(column_name).unwrap_or_default();
-        let fnum = unsafe { PQfnumber(self.internal_result.as_ptr(), cstr.as_ptr()) };
-        match fnum {
-            -1 => None,
-            x => Some(x as usize),
-        }
     }
 }
 

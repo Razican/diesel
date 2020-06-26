@@ -4,6 +4,7 @@ use crate::expression::array_comparison::AsInExpression;
 use crate::expression::AsExpression;
 use crate::prelude::*;
 use crate::query_dsl::methods::FilterDsl;
+use crate::sql_types::{SqlType, TypedSql};
 
 use std::borrow::Borrow;
 use std::hash::Hash;
@@ -136,9 +137,12 @@ impl<'a, Parent, Child> BelongingToDsl<&'a Parent> for Child
 where
     &'a Parent: Identifiable,
     Child: HasTable + BelongsTo<Parent>,
-    Id<&'a Parent>: AsExpression<<Child::ForeignKeyColumn as Expression>::SqlType>,
+    Id<&'a Parent>:
+        AsExpression<<<Child::ForeignKeyColumn as Expression>::SqlType as TypedSql>::Inner>,
     Child::Table: FilterDsl<Eq<Child::ForeignKeyColumn, Id<&'a Parent>>>,
     Child::ForeignKeyColumn: ExpressionMethods,
+    <Child::ForeignKeyColumn as Expression>::SqlType: TypedSql,
+    <<Child::ForeignKeyColumn as Expression>::SqlType as TypedSql>::Inner: SqlType,
 {
     type Output = FindBy<Child::Table, Child::ForeignKeyColumn, Id<&'a Parent>>;
 
@@ -151,9 +155,12 @@ impl<'a, Parent, Child> BelongingToDsl<&'a [Parent]> for Child
 where
     &'a Parent: Identifiable,
     Child: HasTable + BelongsTo<Parent>,
-    Vec<Id<&'a Parent>>: AsInExpression<<Child::ForeignKeyColumn as Expression>::SqlType>,
+    Vec<Id<&'a Parent>>:
+        AsInExpression<<<Child::ForeignKeyColumn as Expression>::SqlType as TypedSql>::Inner>,
     <Child as HasTable>::Table: FilterDsl<EqAny<Child::ForeignKeyColumn, Vec<Id<&'a Parent>>>>,
     Child::ForeignKeyColumn: ExpressionMethods,
+    <Child::ForeignKeyColumn as Expression>::SqlType: TypedSql,
+    <<Child::ForeignKeyColumn as Expression>::SqlType as TypedSql>::Inner: SqlType,
 {
     type Output = Filter<Child::Table, EqAny<Child::ForeignKeyColumn, Vec<Id<&'a Parent>>>>;
 

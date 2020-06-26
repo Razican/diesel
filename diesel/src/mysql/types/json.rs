@@ -5,8 +5,7 @@ use crate::sql_types;
 use std::io::prelude::*;
 
 impl FromSql<sql_types::Json, Mysql> for serde_json::Value {
-    fn from_sql(value: Option<MysqlValue<'_>>) -> deserialize::Result<Self> {
-        let value = not_none!(value);
+    fn from_sql(value: MysqlValue<'_>) -> deserialize::Result<Self> {
         serde_json::from_slice(value.as_bytes()).map_err(|_| "Invalid Json".into())
     }
 }

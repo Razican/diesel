@@ -13,7 +13,7 @@ use crate::sql_types::*;
 pub struct now;
 
 impl Expression for now {
-    type SqlType = Timestamp;
+    type SqlType = Typed<Timestamp>;
 }
 
 impl<DB: Backend> QueryFragment<DB> for now {

@@ -22,11 +22,15 @@ pub fn derive(mut item: syn::DeriveInput) -> Result<proc_macro2::TokenStream, Di
     Ok(wrap_in_dummy_mod(quote! {
         use diesel::expression::{ops, Expression, AsExpression};
         use diesel::sql_types::ops::{Add, Sub, Mul, Div};
+        use diesel::sql_types::{SqlType, TypedSql};
 
         impl #impl_generics ::std::ops::Add<__Rhs> for #struct_name #ty_generics
         #where_clause
-            <Self as Expression>::SqlType: Add,
-            __Rhs: AsExpression<<<Self as Expression>::SqlType as Add>::Rhs>,
+            Self: Expression,
+            <Self as Expression>::SqlType: TypedSql,
+            <<Self as Expression>::SqlType as TypedSql>::Inner: Add,
+            <<<Self as Expression>::SqlType as TypedSql>::Inner as Add>::Rhs: SqlType,
+            __Rhs: AsExpression<<<<Self as Expression>::SqlType as TypedSql>::Inner as Add>::Rhs>,
         {
             type Output = ops::Add<Self, __Rhs::Expression>;
 
@@ -37,8 +41,11 @@ pub fn derive(mut item: syn::DeriveInput) -> Result<proc_macro2::TokenStream, Di
 
         impl #impl_generics ::std::ops::Sub<__Rhs> for #struct_name #ty_generics
         #where_clause
-            <Self as Expression>::SqlType: Sub,
-            __Rhs: AsExpression<<<Self as Expression>::SqlType as Sub>::Rhs>,
+            Self: Expression,
+            <Self as Expression>::SqlType: TypedSql,
+            <<Self as Expression>::SqlType as TypedSql>::Inner: Sub,
+            <<<Self as Expression>::SqlType as TypedSql>::Inner as Sub>::Rhs: SqlType,
+            __Rhs: AsExpression<<<<Self as Expression>::SqlType as TypedSql>::Inner as Sub>::Rhs>,
         {
             type Output = ops::Sub<Self, __Rhs::Expression>;
 
@@ -49,8 +56,11 @@ pub fn derive(mut item: syn::DeriveInput) -> Result<proc_macro2::TokenStream, Di
 
         impl #impl_generics ::std::ops::Mul<__Rhs> for #struct_name #ty_generics
         #where_clause
-            <Self as Expression>::SqlType: Mul,
-            __Rhs: AsExpression<<<Self as Expression>::SqlType as Mul>::Rhs>,
+            Self: Expression,
+            <Self as Expression>::SqlType: TypedSql,
+            <<Self as Expression>::SqlType as TypedSql>::Inner: Mul,
+            <<<Self as Expression>::SqlType as TypedSql>::Inner as Mul>::Rhs: SqlType,
+            __Rhs: AsExpression<<<<Self as Expression>::SqlType as TypedSql>::Inner as Mul>::Rhs>,
         {
             type Output = ops::Mul<Self, __Rhs::Expression>;
 
@@ -61,8 +71,11 @@ pub fn derive(mut item: syn::DeriveInput) -> Result<proc_macro2::TokenStream, Di
 
         impl #impl_generics ::std::ops::Div<__Rhs> for #struct_name #ty_generics
         #where_clause
-            <Self as Expression>::SqlType: Div,
-            __Rhs: AsExpression<<<Self as Expression>::SqlType as Div>::Rhs>,
+            Self: Expression,
+            <Self as Expression>::SqlType: TypedSql,
+            <<Self as Expression>::SqlType as TypedSql>::Inner: Div,
+            <<<Self as Expression>::SqlType as TypedSql>::Inner as Div>::Rhs: SqlType,
+            __Rhs: AsExpression<<<<Self as Expression>::SqlType as TypedSql>::Inner as Div>::Rhs>,
         {
             type Output = ops::Div<Self, __Rhs::Expression>;
 
