@@ -21,10 +21,20 @@ where
 {
 }
 
+/// Represents a single field in a database row.
+///
+/// This trait allows retrieving information on the name of the colum and on the value of the
+/// field.
 pub trait Field<'a, DB: Backend> {
+    /// Retrieves the column name of the field, if any.
     fn column_name(&self) -> Option<&str>;
+
+    /// Retrieves the raw value of the field.
+    ///
+    /// This raw value is backend-dependant.
     fn value(&self) -> Option<backend::RawValue<'a, DB>>;
 
+    /// Checks whether this field is null or not.
     fn is_null(&self) -> bool {
         self.value().is_none()
     }
